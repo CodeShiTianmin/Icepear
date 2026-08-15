@@ -1464,7 +1464,9 @@
     data.icepearUi = data.icepearUi && typeof data.icepearUi === 'object' ? data.icepearUi : {};
     data.icepearUi.shopActive = data.icepearUi.shopActive && typeof data.icepearUi.shopActive === 'object' ? data.icepearUi.shopActive : {};
     data.icepearUi.shopCollapsed = data.icepearUi.shopCollapsed && typeof data.icepearUi.shopCollapsed === 'object' ? data.icepearUi.shopCollapsed : {};
-    data.icepearUi.stickerFolds = Object.assign({emoji: false, images: true, chatAll: false}, data.icepearUi.stickerFolds || {});
+    data.icepearUi.stickerFolds = data.icepearUi.stickerFolds && typeof data.icepearUi.stickerFolds === 'object' ? data.icepearUi.stickerFolds : {};
+    const foldDefaults = {emoji: false, images: true, chatAll: false};
+    Object.keys(foldDefaults).forEach(key => { if (typeof data.icepearUi.stickerFolds[key] !== 'boolean') data.icepearUi.stickerFolds[key] = foldDefaults[key]; });
     return data.icepearUi;
   }
 
@@ -2077,7 +2079,7 @@
         section.classList.toggle('collapsed', collapsed);
         button.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
       };
-      button.addEventListener('click', () => { icepearPrefs().stickerFolds[key] = !icepearPrefs().stickerFolds[key]; save(); sync(); });
+      button.addEventListener('click', () => { const folds = icepearPrefs().stickerFolds; folds[key] = !folds[key]; save(); sync(); });
       sync();
     });
     el('btnAddSticker').onclick = addSticker;
