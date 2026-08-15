@@ -109,7 +109,11 @@ public class MainActivity extends Activity {
                 }
                 fileChooserCallback = callback;
                 try {
-                    startActivityForResult(params.createIntent(), FILE_CHOOSER_REQUEST);
+                    Intent intent = params.createIntent();
+                    if (params.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE) {
+                        intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+                    }
+                    startActivityForResult(intent, FILE_CHOOSER_REQUEST);
                     return true;
                 } catch (Exception error) {
                     fileChooserCallback = null;
@@ -181,7 +185,18 @@ public class MainActivity extends Activity {
         if (requestCode != FILE_CHOOSER_REQUEST || fileChooserCallback == null) {
             return;
         }
-        Uri[] result = WebChromeClient.FileChooserParams.parseResult(resultCode, data);
+        Uri[] result = null;
+        if (resultCode == RESULT_OK && data != null) {
+            ClipData clipData = data.getClipData();
+            if (clipData != null && clipData.getItemCount() > 0) {
+                result = new Uri[clipData.getItemCount()];
+                for (int i = 0; i < clipData.getItemCount(); i++) {
+                    result[i] = clipData.getItemAt(i).getUri();
+                }
+            } else if (data.getData() != null) {
+                result = new Uri[]{data.getData()};
+            }
+        }
         fileChooserCallback.onReceiveValue(result);
         fileChooserCallback = null;
     }
