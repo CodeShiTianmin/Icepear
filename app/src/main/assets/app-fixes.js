@@ -120,10 +120,10 @@
       data.theme = {myBg: '#6d3b58', myText: '#ffffff', hisBg: '#fffaf7', hisText: '#2d252a'};
       data.font.radius = 18;
       data.font.size = 16;
+      try { storeRemove('milkPatches'); } catch (_) {}
     }
 
     data.schemaVersion = 2.1;
-    try { localStorage.removeItem('milkPatches'); } catch (_) {}
     save();
   }
 

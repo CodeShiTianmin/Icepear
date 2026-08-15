@@ -31,6 +31,8 @@ import android.widget.Toast;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -215,6 +217,64 @@ public class MainActivity extends Activity {
     }
 
     public final class AndroidBridge {
+        @JavascriptInterface
+        public String getData(String key) {
+            File target = storageFile(key);
+            if (target == null || !target.isFile()) {
+                return null;
+            }
+            try {
+                byte[] bytes = Files.readAllBytes(target.toPath());
+                return new String(bytes, StandardCharsets.UTF_8);
+            } catch (Exception error) {
+                return null;
+            }
+        }
+
+        @JavascriptInterface
+        public boolean putData(String key, String value) {
+            File target = storageFile(key);
+            if (target == null || value == null) {
+                return false;
+            }
+            File temp = new File(target.getParentFile(), target.getName() + ".tmp");
+            try (FileOutputStream stream = new FileOutputStream(temp)) {
+                stream.write(value.getBytes(StandardCharsets.UTF_8));
+                stream.getFD().sync();
+            } catch (Exception error) {
+                temp.delete();
+                return false;
+            }
+            if (!temp.renameTo(target)) {
+                temp.delete();
+                return false;
+            }
+            return true;
+        }
+
+        @JavascriptInterface
+        public void removeData(String key) {
+            File target = storageFile(key);
+            if (target != null && target.isFile()) {
+                target.delete();
+            }
+        }
+
+        private File storageFile(String key) {
+            if (key == null) {
+                return null;
+            }
+            String safeKey = key.trim().replaceAll("[^A-Za-z0-9._-]", "_");
+            if (safeKey.isEmpty() || safeKey.length() > 100) {
+                return null;
+            }
+            File root = new File(getFilesDir(), "webstore");
+            if (!root.exists() && !root.mkdirs()) {
+                return null;
+            }
+            return new File(root, safeKey + ".json");
+        }
+
         @JavascriptInterface
         public void copyText(String text) {
             runOnUiThread(() -> {

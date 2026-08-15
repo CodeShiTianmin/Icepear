@@ -501,7 +501,7 @@
     if (!message.recall && message.type !== 'sys') actions.push({id: 'quote', label: '引用', run: () => { beginMessageQuote(message, index); closeMessageMenu(); }});
     actions.push({id: 'remind', label: '提醒', run: () => remindMessage(message)});
     if (message.side !== 'me') actions.push({id: 'translate', label: '翻译', run: () => translateMessage(message)});
-    else actions.push({id: 'delete', label: '删除', danger: true, run: () => deleteMessage(index)});
+    else if (!actions.some(action => action.id === 'delete')) actions.push({id: 'delete', label: '删除', danger: true, run: () => deleteMessage(index)});
     if (text && !text.startsWith('[')) actions.push({id: 'search', label: '搜一搜', run: () => searchMessage(message)});
     if (text) actions.push({id: 'read', label: '连续朗读', run: () => readMessagesFrom(index)});
     return actions.slice(0, 10);
@@ -1105,7 +1105,7 @@
   };
 
   clearAllPatches = function () {
-    localStorage.removeItem('milkPatches');
+    storeRemove('milkPatches');
     localStorage.setItem('icepearPatchBoot', 'ok');
     renderPatchList();
     toast('已清空全部补丁，重启后完全生效');
@@ -1321,7 +1321,7 @@
     mini.style.top = Math.max(12, window.innerHeight - height - 82) + 'px';
   }
 
-  function tuckMini(side) {
+  function tuckMini(side, silent) {
     const width = mini.offsetWidth;
     const height = mini.offsetHeight;
     const top = parseFloat(mini.style.top) || mini.getBoundingClientRect().top || 80;
@@ -1332,7 +1332,7 @@
     miniHandle.classList.add(side);
     miniHandle.style.top = Math.max(8, Math.min(window.innerHeight - 66, top + height / 2 - 29)) + 'px';
     miniHandle.style.display = 'flex';
-    requestAnimationFrame(() => miniHandle.focus({preventScroll: true}));
+    if (!silent) requestAnimationFrame(() => miniHandle.focus({preventScroll: true}));
   }
 
   function untuckMini() {
@@ -1424,10 +1424,14 @@
   }
 
   installVideoMiniInteractions(false);
+  let lastViewportWidth = window.innerWidth;
   window.addEventListener('resize', () => {
+    const widthChanged = window.innerWidth !== lastViewportWidth;
+    lastViewportWidth = window.innerWidth;
     if (mini.style.display !== 'block') return;
-    if (mini.classList.contains('edge-left')) tuckMini('left');
-    else if (mini.classList.contains('edge-right')) tuckMini('right');
+    if (!widthChanged) return;
+    if (mini.classList.contains('edge-left')) tuckMini('left', true);
+    else if (mini.classList.contains('edge-right')) tuckMini('right', true);
     else {
       const rect = mini.getBoundingClientRect();
       mini.style.left = Math.max(0, Math.min(window.innerWidth - rect.width, rect.left)) + 'px';
