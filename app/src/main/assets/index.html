@@ -650,7 +650,12 @@ body.dark .setting-row textarea{background:#2a2a2a;color:#eee;border-color:#333}
 'use strict';
 /* ===== 基础与数据模型 ===== */
 window.addEventListener('error',function(e){var m=String(e.message);if(m.indexOf('Script error.')>-1)return;alert('JS错误:'+m)});
-const db={get(){try{var s=localStorage.getItem('milkData')||'';s=s.replace(/^\uFEFF/,'');return JSON.parse(s)||{}}catch(e){return{}}},set(d){localStorage.setItem('milkData',JSON.stringify(d))}};
+/* 优先使用 Android 私有目录存储(无 localStorage 5MB 配额限制)，网页端自动降级回 localStorage */
+const NST=(function(){try{return (typeof AndroidBridge!=='undefined'&&AndroidBridge&&AndroidBridge.getData&&AndroidBridge.putData&&AndroidBridge.removeData)?AndroidBridge:null}catch(e){return null}})();
+function storeGet(k){if(NST){try{var v=NST.getData(k);if(v!==null&&v!==undefined&&v!=='')return v}catch(e){}}var lv=null;try{lv=localStorage.getItem(k)}catch(e){}if(NST&&lv!==null&&lv!==''){try{if(NST.putData(k,lv))localStorage.removeItem(k)}catch(e){}}return lv}
+function storeSet(k,v){if(NST){try{if(NST.putData(k,v)){try{localStorage.removeItem(k)}catch(e){}return}}catch(e){}}localStorage.setItem(k,v)}
+function storeRemove(k){if(NST){try{NST.removeData(k)}catch(e){}}try{localStorage.removeItem(k)}catch(e){}}
+const db={get(){try{var s=storeGet('milkData')||'';s=s.replace(/^\uFEFF/,'');return JSON.parse(s)||{}}catch(e){return{}}},set(d){storeSet('milkData',JSON.stringify(d))}};
 let data=db.get();
 if(!data.roles){data.roles={r1:{name:'他',nickname:'',avatar:'🧑',myName:'我',myAvatar:'我',wallet:{his:100,mine:100},cards:{'默认':[]},statuses:['想你'],statusNow:'想你',pokes:['拍了拍他的头'],shop:[],letters:[],chat:[]}};data.activeRole='r1';}
 for(const k in data.roles){const r=data.roles[k];if(!r||typeof r!=='object')continue;if(r.myAvatar===undefined)r.myAvatar='我';if(r.nickname===undefined)r.nickname='';if(r.wallet===undefined)r.wallet={his:100,mine:100};if(r.cards===undefined)r.cards={'默认':[]};if(r.statuses===undefined)r.statuses=['想你'];if(r.statusNow===undefined)r.statusNow='想你';if(r.pokes===undefined)r.pokes=['拍了拍他的头'];if(r.shop===undefined)r.shop=[];if(r.letters===undefined)r.letters=[];if(r.chat===undefined)r.chat=[];}
@@ -708,15 +713,15 @@ save=function(){try{if(idbOk)extract(data);_save0()}catch(e){alert('存储空间
 (function(){var req=indexedDB.open(DB,1);req.onupgradeneeded=function(e){e.target.result.createObjectStore(ST)};req.onsuccess=function(){idb=req.result;try{var tx=idb.transaction(ST,'readonly'),ks=tx.objectStore(ST).getAllKeys(),vs=tx.objectStore(ST).getAll();tx.oncomplete=function(){var k=ks.result||[],v=vs.result||[];for(var i=0;i<k.length;i++)IDB_CACHE[k[i]]=v[i];idbOk=true;try{extract(data);save()}catch(e){}};tx.onerror=function(){idbOk=true;try{extract(data);save()}catch(e){}}}catch(e){idbOk=true;try{extract(data);save()}catch(e){}}}})();
 
 /* ===== 永久补丁系统 + 历史版本 ===== */
-function loadPatches(){try{return JSON.parse(localStorage.getItem('milkPatches')||'[]')}catch(e){return[]}}
-function savePatches(l){try{localStorage.setItem('milkPatches',JSON.stringify(l))}catch(e){}}
+function loadPatches(){try{return JSON.parse(storeGet('milkPatches')||'[]')}catch(e){return[]}}
+function savePatches(l){try{storeSet('milkPatches',JSON.stringify(l))}catch(e){}}
 function replayPatches(){}
 function snap(){try{data.snapshots=data.snapshots||[];data.snapshots.push({t:new Date().toLocaleString(),d:JSON.stringify(data)});if(data.snapshots.length>10)data.snapshots.shift();save();renderSnapList()}catch(e){}}
 function restoreSnap(i){var s=data.snapshots[i];if(!s)return;if(!confirm('恢复到「'+s.t+'」?当前数据会被覆盖'))return;try{data=JSON.parse(s.d);data.snapshots=data.snapshots||[];save();applyAll();renderSnapList();alert('已恢复')}catch(e){alert('恢复失败')}}
 function applyPatch(){alert('新版已移除代码补丁功能，请通过应用更新获得修复。')}
 function togglePatch(i){var l=loadPatches();if(l[i]){l[i].on=!l[i].on;savePatches(l);renderPatchList();}}
 function delPatch(i){var l=loadPatches();l.splice(i,1);savePatches(l);renderPatchList();}
-function clearAllPatches(){localStorage.removeItem('milkPatches');renderPatchList();toast('已清空所有补丁');}
+function clearAllPatches(){storeRemove('milkPatches');renderPatchList();toast('已清空所有补丁');}
 function renderPatchList(){var box=$('patchList');if(!box)return;var l=loadPatches();box.innerHTML=l.length?l.map(function(p,i){return '<div class="patch-item"><span>#'+(i+1)+' '+(p.on===false?'(已停用)':'')+' '+esc(p.t)+'</span><span><button class="'+(p.on===false?'':'ok')+'" onclick="togglePatch('+i+')">'+(p.on===false?'启用':'停用')+'</button><button class="del" onclick="delPatch('+i+')">删除</button></span></div>'}).join(''):'<div class="hint">暂无永久补丁</div>';}
 function renderSnapList(){$('snapList').innerHTML=data.snapshots.length?data.snapshots.map((s,i)=>'<div class="patch-item"><span>'+esc(s.t)+'</span><button onclick="restoreSnap('+i+')">恢复</button></div>').join(''):'<div class="hint">暂无历史版本</div>'}
 $('btnApplyPatch').onclick=applyPatch;
@@ -1575,10 +1580,10 @@ $('searchChat').addEventListener('input',renderSearch);
 /* ===== 防丢数据:滚动备份 + 全新数据时自动恢复 ===== */
 (function(){
   const _s=save;
-  save=function(){try{_s();localStorage.setItem('milkDataBak',localStorage.getItem('milkData'));}catch(e){}};
+  save=function(){try{_s();storeSet('milkDataBak',storeGet('milkData'));}catch(e){}};
   function isFreshDefault(){const r=R();if(!r)return false;if(Object.keys(data.roles).length!==1)return false;if(r.name!=='他')return false;if(r.nickname)return false;if(r.chat&&r.chat.length)return false;if(r.cards&&Object.keys(r.cards).length>1)return false;return true;}
   let rel=0;
-  function guard(){try{const bak=localStorage.getItem('milkDataBak');if(!bak)return;const b=JSON.parse(bak);if(!b||!b.roles)return;if(isFreshDefault()&&rel<2){localStorage.setItem('milkData',bak);rel++;location.reload();return;}}catch(e){}}
+  function guard(){try{const bak=storeGet('milkDataBak');if(!bak)return;const b=JSON.parse(bak);if(!b||!b.roles)return;if(isFreshDefault()&&rel<2){storeSet('milkData',bak);rel++;location.reload();return;}}catch(e){}}
   guard();setTimeout(guard,400);setTimeout(guard,1500);
 })();
 
@@ -1592,7 +1597,7 @@ setInterval(()=>{const d=new Date();if(d.getDay()===0)updateWeekly();},3600000);
 (function(){const vb=window.visualViewport;if(vb){const fix=()=>{document.body.style.height=vb.height+'px'};vb.addEventListener('resize',fix);vb.addEventListener('scroll',fix);fix();}})();
 console.log('✅ 全部8块组装完成');
 </script>
-<script src="app-fixes.js?v=2301"></script>
-<script src="features-v3.js?v=2303"></script>
+<script src="app-fixes.js?v=2304"></script>
+<script src="features-v3.js?v=2304"></script>
 </body>
 </html>
