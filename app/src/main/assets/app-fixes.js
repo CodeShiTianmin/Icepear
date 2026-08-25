@@ -776,7 +776,7 @@
       amount = Number(gift.price);
       details = {gift: gift.name, price: amount};
     } else {
-      amount = Math.min(role.wallet.his, rand(type === 'red' ? 5 : 10, type === 'red' ? 200 : 500));
+      amount = Math.min(Number(role.wallet.his), rand(0, Math.min(9999999, Math.max(0, Number(role.wallet.his)))));
       amount = Math.max(0.01, Math.round(amount * 100) / 100);
     }
     role.wallet.his -= amount;
