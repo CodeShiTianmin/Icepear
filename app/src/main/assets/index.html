@@ -259,10 +259,37 @@ body.dark .meta .read{color:#3ba55d}
 body.dark .card-item button,body.dark .letter .btns button{background:#333;color:#ccc}
 body.dark #plusPanel .ibtn span{color:#ddd}
 body.dark .setting-row textarea{background:#2a2a2a;color:#eee;border-color:#333}
+/* ===== 静态开屏页（首帧即显示，消灭闪屏） ===== */
+#bootScreen{position:fixed;inset:0;z-index:9000;display:flex;align-items:center;justify-content:center;background:linear-gradient(160deg,var(--paper,#f8f3ef),var(--surface,#fff));overflow:hidden}
+#bootScreen.fade{opacity:0;transition:opacity .45s ease}
+body.booting #topbar,body.booting .page,body.booting #bottomNav,body.booting #inputBar{display:none !important}
+#bootInner{text-align:center;width:min(88vw,340px);box-sizing:border-box}
+#bootStage{position:relative;width:220px;height:130px;margin:0 auto}
+#bootName{font-size:20px;font-weight:800;color:var(--plum,#7a4b63);letter-spacing:.08em;margin-top:18px}
+#bootSub{font-size:12px;color:var(--muted-ink,#9c8a90);line-height:1.9;margin-top:6px}
+@keyframes mpD1{0%,80%,100%{opacity:.2}40%{opacity:1}}
+.mpb-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--plum,#7a4b63);margin:0 3px;animation:mpD1 1.2s infinite}
+.mpb-dot:nth-child(2){animation-delay:.15s}.mpb-dot:nth-child(3){animation-delay:.3s}
+.boa-stage{position:relative;overflow:hidden}
+.boa-item{position:absolute;will-change:transform,opacity}
+@keyframes boaH{0%{transform:translateY(25%) scale(.6);opacity:0}20%{opacity:1}100%{transform:translateY(-70%) scale(1.1);opacity:0}}
+.boa-heart{color:var(--coral,#e0777d);line-height:1;font-family:Georgia,serif;animation:boaH linear infinite}
+@keyframes boaB{0%{transform:translateY(25%);opacity:0}15%{opacity:1}100%{transform:translateY(-75%);opacity:0}}
+.boa-bub{border:2px solid var(--plum,#7a4b63);border-radius:50%;background:transparent;animation:boaB linear infinite}
+@keyframes boaS{0%,100%{opacity:.25;transform:scale(.7) rotate(0deg)}50%{opacity:1;transform:scale(1.15) rotate(25deg)}}
+.boa-star{color:var(--plum,#7a4b63);line-height:1;animation:boaS ease-in-out infinite}
+@keyframes boaA1{0%,100%{transform:translateX(0)}50%{transform:translateX(32%)}}
+@keyframes boaA2{0%,100%{transform:translateX(0)}50%{transform:translateX(-32%)}}
+.boa-av{border:2px solid var(--plum,#7a4b63);border-radius:50%;background:var(--surface,#fff);color:var(--plum,#7a4b63);display:flex;align-items:center;justify-content:center;font-weight:700;box-shadow:0 2px 8px rgba(78,45,67,.12)}
+@keyframes boaPop{0%,55%,100%{opacity:0;transform:scale(.3)}75%{opacity:1;transform:scale(1.15)}90%{transform:scale(.95)}}
+.boa-heart-pop{animation:boaPop 1.4s ease-in-out infinite;line-height:1;color:var(--coral,#e0777d)}
 </style>
 <meta name="theme-color" content="#f8f3ef">
 <link rel="stylesheet" href="app-theme.css">
-</head><body class="view-chat">
+</head><body class="view-chat booting">
+<!-- 静态开屏页：写死在首帧，脚本加载后由 startBootScreen() 接管并淡出 -->
+<div id="bootScreen"><div id="bootInner"><div id="bootStage"></div><div id="bootName">Icepear</div><div id="bootSub">正在准备见面…<br><span class="mpb-dot"></span><span class="mpb-dot"></span><span class="mpb-dot"></span></div></div></div>
+<script>setTimeout(function(){var b=document.body,s=document.getElementById('bootScreen');if(b.classList.contains('booting')){b.classList.remove('booting');if(s)try{s.remove()}catch(e){}}},10000);</script>
 <!-- 顶部:状态 + 正在输入 -->
 <div id="topbar">
   <div class="avatar" id="topAvatar">🧑</div>
@@ -889,9 +916,9 @@ function heSendRandom(){
   if(kind===0){sendCard();}
   else if(kind===1){if(data.emoji.length)addMsg('other',data.emoji[rand(0,data.emoji.length-1)]);else sendCard();}
   else if(kind===2){if(data.stickers.length){addMsg('other',{type:'img',src:data.stickers[rand(0,data.stickers.length-1)]});}else sendCard();}
-  else if(kind===3){r.chat.push({side:'other',type:'red',amount:rand(5,200),t:Date.now(),read:true});save();renderChat(false);playSound(data.sound.type);}
+  else if(kind===3){r.chat.push({side:'other',type:'red',amount:Math.min(r.wallet.his,rand(0,9999999)),t:Date.now(),read:true});save();renderChat(false);playSound(data.sound.type);}
   else if(kind===4){const g=r.shop.length?r.shop[rand(0,r.shop.length-1)]:null;if(g){r.chat.push({side:'other',type:'gift',gift:g.name,price:g.price,t:Date.now(),read:true});save();renderChat(false);playSound(data.sound.type);}else sendCard();}
-  else if(kind===5){r.chat.push({side:'other',type:'zhuan',amount:rand(10,500),t:Date.now(),read:true});save();renderChat(false);playSound(data.sound.type);}
+  else if(kind===5){r.chat.push({side:'other',type:'zhuan',amount:Math.min(r.wallet.his,rand(0,9999999)),t:Date.now(),read:true});save();renderChat(false);playSound(data.sound.type);}
   else{const locs=(data.hisLocs||[]).filter(Boolean);if(locs.length)addMsg('other',{type:'loc',text:locs[rand(0,locs.length-1)]});else sendCard();}
 }
 
