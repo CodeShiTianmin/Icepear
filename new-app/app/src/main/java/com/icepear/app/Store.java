@@ -358,6 +358,35 @@ public final class Store {
         save();
     }
 
+    /* ---------- 历史快照 ---------- */
+
+    public void saveSnapshot(String name) throws JSONException {
+        JSONArray snaps = data.optJSONArray("snapshots");
+        if (snaps == null) {
+            snaps = new JSONArray();
+            data.put("snapshots", snaps);
+        }
+        JSONObject copy = new JSONObject(data.toString());
+        copy.remove("snapshots");
+        if (snaps.length() >= 10) snaps.remove(0);
+        snaps.put(new JSONObject()
+                .put("t", System.currentTimeMillis())
+                .put("name", name == null || name.trim().isEmpty() ? "快照" : name.trim())
+                .put("data", copy.toString()));
+        save();
+    }
+
+    public void restoreSnapshot(int index) throws JSONException {
+        JSONArray snaps = data.optJSONArray("snapshots");
+        if (snaps == null || index < 0 || index >= snaps.length()) return;
+        JSONObject restored = new JSONObject(snaps.getJSONObject(index).getString("data"));
+        restored.put("snapshots", snaps);
+        data = restored;
+        ensureDefaults();
+        ensureV230Data();
+        save();
+    }
+
     /* ---------- 媒体仓库：大图/音频以文件形式保存，引用为 idb:key ---------- */
 
     public String putMedia(byte[] bytes, String key) {

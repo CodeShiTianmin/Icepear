@@ -446,7 +446,7 @@ public class ChatPage extends Page {
                 });
     }
 
-    private void jumpToMessage(String ref) {
+    public void jumpToMessage(String ref) {
         JSONArray chat = a.store.chat();
         int childIndex = 0;
         for (int i = 0; i < chat.length(); i++) {
@@ -545,48 +545,43 @@ public class ChatPage extends Page {
         LinearLayout box = Ui.column(a);
         box.setPadding(Ui.dp(a, 10), Ui.dp(a, 10), Ui.dp(a, 10), Ui.dp(a, 10));
 
+        JSONArray emoji = a.store.data.optJSONArray("emoji");
+        List<Integer> commonEmoji = commonEmojiIndexes(emoji);
+        if (!commonEmoji.isEmpty()) {
+            box.addView(Ui.boldText(a, "⭐ 常用表情", 13, Ui.mutedInk(a, a.store)));
+            GridLayout freqGrid = new GridLayout(a);
+            freqGrid.setColumnCount(7);
+            for (int index : commonEmoji) {
+                freqGrid.addView(emojiCell(emoji.optString(index), index));
+            }
+            box.addView(freqGrid);
+        }
         box.addView(Ui.boldText(a, "Emoji", 13, Ui.mutedInk(a, a.store)));
         GridLayout emojiGrid = new GridLayout(a);
         emojiGrid.setColumnCount(7);
-        JSONArray emoji = a.store.data.optJSONArray("emoji");
         for (int i = 0; emoji != null && i < emoji.length(); i++) {
-            final String value = emoji.optString(i);
-            TextView cell = Ui.text(a, value, 20, Ui.ink(a, a.store));
-            cell.setPadding(Ui.dp(a, 8), Ui.dp(a, 8), Ui.dp(a, 8), Ui.dp(a, 8));
-            cell.setOnClickListener(v -> textInput.append(value));
-            emojiGrid.addView(cell);
+            emojiGrid.addView(emojiCell(emoji.optString(i), i));
         }
         box.addView(emojiGrid);
 
+        JSONArray stickers = a.store.data.optJSONArray("stickers");
+        List<Integer> commonStickers = commonStickerIndexes(stickers);
+        if (!commonStickers.isEmpty()) {
+            box.addView(Ui.boldText(a, "⭐ 常用", 13, Ui.mutedInk(a, a.store)));
+            GridLayout freqStickerGrid = new GridLayout(a);
+            freqStickerGrid.setColumnCount(4);
+            for (int index : commonStickers) {
+                View cell = stickerCell(stickers.optString(index), index);
+                if (cell != null) freqStickerGrid.addView(cell);
+            }
+            box.addView(freqStickerGrid);
+        }
         box.addView(Ui.boldText(a, "表情包", 13, Ui.mutedInk(a, a.store)));
         GridLayout stickerGrid = new GridLayout(a);
         stickerGrid.setColumnCount(4);
-        JSONArray stickers = a.store.data.optJSONArray("stickers");
         for (int i = 0; stickers != null && i < stickers.length(); i++) {
-            final String ref = stickers.optString(i);
-            final int index = i;
-            android.graphics.Bitmap bitmap = Ui.decodeDataUrl(a.store.resolveMedia(ref));
-            if (bitmap == null) continue;
-            ImageView image = new ImageView(a);
-            image.setImageBitmap(bitmap);
-            image.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            GridLayout.LayoutParams lp = new GridLayout.LayoutParams();
-            lp.width = Ui.dp(a, 64);
-            lp.height = Ui.dp(a, 64);
-            lp.setMargins(Ui.dp(a, 6), Ui.dp(a, 6), Ui.dp(a, 6), Ui.dp(a, 6));
-            image.setLayoutParams(lp);
-            image.setOnClickListener(v -> {
-                try {
-                    a.logic.addMsg("me", new JSONObject().put("type", "img").put("src", ref));
-                    JSONObject stFreq = a.store.data.optJSONObject("stFreq");
-                    if (stFreq != null) stFreq.put(String.valueOf(index), stFreq.optInt(String.valueOf(index)) + 1);
-                    a.store.save();
-                    closePanel();
-                    a.logic.scheduleReply();
-                } catch (JSONException ignored) {
-                }
-            });
-            stickerGrid.addView(image);
+            View cell = stickerCell(stickers.optString(i), i);
+            if (cell != null) stickerGrid.addView(cell);
         }
         if (stickers == null || stickers.length() == 0) {
             box.addView(hint("暂无表情包，去“字卡 → 表情”添加"));
@@ -595,6 +590,82 @@ public class ChatPage extends Page {
         scroll.addView(box);
         panelBox.addView(scroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+    }
+
+    private TextView emojiCell(String value, int index) {
+        TextView cell = Ui.text(a, value, 20, Ui.ink(a, a.store));
+        cell.setPadding(Ui.dp(a, 8), Ui.dp(a, 8), Ui.dp(a, 8), Ui.dp(a, 8));
+        cell.setOnClickListener(v -> {
+            textInput.append(value);
+            JSONObject freq = a.store.data.optJSONObject("freq");
+            if (freq != null) {
+                try {
+                    freq.put("e" + index, freq.optInt("e" + index) + 1);
+                    a.store.save();
+                } catch (JSONException ignored) {
+                }
+            }
+        });
+        return cell;
+    }
+
+    private ImageView stickerCell(String ref, int index) {
+        android.graphics.Bitmap bitmap = Ui.decodeDataUrl(a.store.resolveMedia(ref));
+        if (bitmap == null) return null;
+        ImageView image = new ImageView(a);
+        image.setImageBitmap(bitmap);
+        image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        GridLayout.LayoutParams lp = new GridLayout.LayoutParams();
+        lp.width = Ui.dp(a, 64);
+        lp.height = Ui.dp(a, 64);
+        lp.setMargins(Ui.dp(a, 6), Ui.dp(a, 6), Ui.dp(a, 6), Ui.dp(a, 6));
+        image.setLayoutParams(lp);
+        image.setOnClickListener(v -> {
+            try {
+                a.logic.addMsg("me", new JSONObject().put("type", "img").put("src", ref));
+                JSONObject stFreq = a.store.data.optJSONObject("stFreq");
+                if (stFreq != null) stFreq.put(String.valueOf(index), stFreq.optInt(String.valueOf(index)) + 1);
+                JSONObject freq = a.store.data.optJSONObject("freq");
+                if (freq != null) freq.put("st" + index, freq.optInt("st" + index) + 1);
+                a.store.save();
+                closePanel();
+                a.logic.scheduleReply();
+            } catch (JSONException ignored) {
+            }
+        });
+        return image;
+    }
+
+    /** 常用 Emoji：按 freq[e+i] 降序取前 8，等价于旧版 renderEmojiPanel() */
+    private List<Integer> commonEmojiIndexes(JSONArray emoji) {
+        List<Integer> result = new ArrayList<>();
+        JSONObject freq = a.store.data.optJSONObject("freq");
+        if (freq == null || emoji == null) return result;
+        List<int[]> counted = new ArrayList<>();
+        for (int i = 0; i < emoji.length(); i++) {
+            int count = freq.optInt("e" + i, 0);
+            if (count > 0) counted.add(new int[]{i, count});
+        }
+        counted.sort((x, y) -> y[1] - x[1]);
+        for (int i = 0; i < Math.min(8, counted.size()); i++) result.add(counted.get(i)[0]);
+        return result;
+    }
+
+    /** 常用表情包：按 freq[st+i] + stFreq[i] 降序取前 6，等价于旧版 renderStickers() */
+    private List<Integer> commonStickerIndexes(JSONArray stickers) {
+        List<Integer> result = new ArrayList<>();
+        if (stickers == null) return result;
+        JSONObject freq = a.store.data.optJSONObject("freq");
+        JSONObject stFreq = a.store.data.optJSONObject("stFreq");
+        List<int[]> counted = new ArrayList<>();
+        for (int i = 0; i < stickers.length(); i++) {
+            int count = (freq != null ? freq.optInt("st" + i, 0) : 0)
+                    + (stFreq != null ? stFreq.optInt(String.valueOf(i), 0) : 0);
+            if (count > 0) counted.add(new int[]{i, count});
+        }
+        counted.sort((x, y) -> y[1] - x[1]);
+        for (int i = 0; i < Math.min(6, counted.size()); i++) result.add(counted.get(i)[0]);
+        return result;
     }
 
     private void buildPlusPanel() {

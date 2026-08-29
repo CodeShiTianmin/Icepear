@@ -104,7 +104,20 @@ public class VideoOverlay {
         root.setVisibility(View.VISIBLE);
         root.setClickable(true);
         fullScreen = new FrameLayout(a);
-        fullScreen.setBackground(Ui.gradient(0xFF2B2333, 0xFF14101B, 0));
+        android.graphics.Bitmap bg = Ui.decodeDataUrl(
+                a.store.resolveMedia(a.store.data.optString("videoBg", "")));
+        if (bg != null) {
+            android.graphics.drawable.BitmapDrawable drawable =
+                    new android.graphics.drawable.BitmapDrawable(a.getResources(), bg);
+            drawable.setGravity(Gravity.FILL);
+            fullScreen.setBackground(drawable);
+            View scrim = new View(a);
+            scrim.setBackgroundColor(0x66000000);
+            fullScreen.addView(scrim, new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        } else {
+            fullScreen.setBackground(Ui.gradient(0xFF2B2333, 0xFF14101B, 0));
+        }
         LinearLayout box = Ui.column(a);
         box.setGravity(Gravity.CENTER_HORIZONTAL);
         box.setPadding(0, Ui.dp(a, 90), 0, 0);
