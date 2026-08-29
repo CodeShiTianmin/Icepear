@@ -13,6 +13,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -145,33 +146,39 @@ public class MainActivity extends Activity implements ChatLogic.Host {
 
     /* ---------- 底部导航（图标式，对应补丁18） ---------- */
 
-    private static final String[][] NAV = {
-            {"pageChat", "💬", "聊天"},
-            {"pageShop", "🛍", "小卖铺"},
-            {"pageCards", "🗂", "字卡"},
-            {"pageLetter", "✉️", "信箱"},
-            {"pageSet", "⚙️", "设置"},
+    private static final Object[][] NAV = {
+            {"pageChat", R.drawable.nav_chat, "聊天"},
+            {"pageMoments", R.drawable.nav_moments, "动态"},
+            {"pageMenu", R.drawable.nav_menu, "发现"},
+            {"pageLetter", R.drawable.nav_letter, "信箱"},
+            {"pageSet", R.drawable.nav_set, "我的"},
     };
 
     private void buildBottomNav() {
         bottomNav.removeAllViews();
         bottomNav.setBackgroundColor(Ui.navBg(this, store));
-        for (String[] item : NAV) {
-            final String id = item[0];
-            TextView button = new TextView(this);
-            button.setText(item[1]);
-            button.setTextSize(24);
-            button.setGravity(Gravity.CENTER);
-            button.setContentDescription(item[2]);
+        for (Object[] item : NAV) {
+            final String id = (String) item[0];
             boolean active = id.equals(currentPage);
-            button.setAlpha(active ? 1f : 0.55f);
-            if (active) {
-                button.setBackground(Ui.rounded((Ui.plum(this, store) & 0x00FFFFFF) | 0x22000000, Ui.dp(this, 16)));
-            }
+            LinearLayout button = new LinearLayout(this);
+            button.setOrientation(LinearLayout.VERTICAL);
+            button.setGravity(Gravity.CENTER);
+            button.setContentDescription((String) item[2]);
+            ImageView icon = new ImageView(this);
+            icon.setImageResource((Integer) item[1]);
+            icon.setColorFilter(active ? Ui.plum(this, store) : Ui.faintInk(this, store));
+            int size = Ui.dp(this, 26);
+            LinearLayout.LayoutParams ip = new LinearLayout.LayoutParams(size, size);
+            if (active) ip.bottomMargin = Ui.dp(this, 2);
+            button.addView(icon, ip);
+            View dot = new View(this);
+            dot.setBackground(Ui.rounded(Ui.plum(this, store), Ui.dp(this, 3)));
+            dot.setVisibility(active ? View.VISIBLE : View.INVISIBLE);
+            LinearLayout.LayoutParams dp = new LinearLayout.LayoutParams(Ui.dp(this, 5), Ui.dp(this, 5));
+            dp.topMargin = Ui.dp(this, 3);
+            button.addView(dot, dp);
             button.setOnClickListener(v -> goPage(id, true));
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
-            int m = Ui.dp(this, 6);
-            lp.setMargins(m, m, m, m);
             bottomNav.addView(button, lp);
         }
     }
@@ -188,7 +195,7 @@ public class MainActivity extends Activity implements ChatLogic.Host {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         page.refresh();
         boolean mainTab = false;
-        for (String[] item : NAV) if (item[0].equals(id)) mainTab = true;
+        for (Object[] item : NAV) if (item[0].equals(id)) mainTab = true;
         bottomNav.setVisibility(mainTab ? View.VISIBLE : View.GONE);
         buildBottomNav();
     }

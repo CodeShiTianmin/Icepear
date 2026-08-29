@@ -169,24 +169,44 @@ public class ChatPage extends Page {
     private void applyWallpaper(View target) {
         JSONObject wallpaper = a.store.data.optJSONObject("wallpaper");
         if (wallpaper == null) return;
-        String image = a.store.resolveMedia(wallpaper.optString("image", ""));
-        if (image.startsWith("data:image")) {
-            android.graphics.Bitmap bitmap = Ui.decodeDataUrl(image);
-            if (bitmap != null) {
-                target.setBackground(new android.graphics.drawable.BitmapDrawable(a.getResources(), bitmap));
-                return;
+        boolean dark = Ui.dark(a.store);
+        String preset = wallpaper.optString("preset", "默认");
+        if ("图片".equals(preset)) {
+            String image = a.store.resolveMedia(wallpaper.optString("image", ""));
+            if (image.startsWith("data:image")) {
+                android.graphics.Bitmap bitmap = Ui.decodeDataUrl(image);
+                if (bitmap != null) {
+                    target.setBackground(new android.graphics.drawable.BitmapDrawable(a.getResources(), bitmap));
+                    return;
+                }
             }
         }
-        String preset = wallpaper.optString("preset", "默认");
-        int color;
-        switch (preset) {
-            case "奶油": color = 0xFFFFF6E9; break;
-            case "雾紫": color = 0xFFEFE8F5; break;
-            case "薄荷": color = 0xFFE7F4EC; break;
-            case "夜空": color = 0xFF1E2233; break;
-            default: color = Ui.paper(a, a.store);
+        if ("默认".equals(preset)) {
+            String asset = dark ? "art/chat-paper-night.webp" : "art/chat-paper-day.webp";
+            try (java.io.InputStream in = a.getAssets().open(asset)) {
+                android.graphics.Bitmap paper = android.graphics.BitmapFactory.decodeStream(in);
+                if (paper != null) {
+                    target.setBackground(new android.graphics.drawable.BitmapDrawable(a.getResources(), paper));
+                    return;
+                }
+            } catch (java.io.IOException ignored) {
+            }
+            target.setBackgroundColor(dark ? 0xFF171316 : 0xFFF8F3EF);
+            return;
         }
-        target.setBackgroundColor(color);
+        if (dark) {
+            target.setBackgroundColor(0xFF171316);
+            return;
+        }
+        int start, end;
+        switch (preset) {
+            case "粉色": start = 0xFFFFF4F4; end = 0xFFF8E7EC; break;
+            case "蓝色": start = 0xFFF4F7FB; end = 0xFFE8F0F4; break;
+            case "绿色": start = 0xFFF4F8F5; end = 0xFFE8F1EB; break;
+            case "星空": start = 0xFF29243C; end = 0xFF151323; break;
+            default: start = 0xFFF9F5F2; end = 0xFFF5EFEB;
+        }
+        target.setBackground(Ui.gradient(start, end, 0));
     }
 
     @Override
