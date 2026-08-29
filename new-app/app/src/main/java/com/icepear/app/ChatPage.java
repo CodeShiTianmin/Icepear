@@ -379,11 +379,12 @@ public class ChatPage extends Page {
                 end = Ui.parseColor(pair.optString(1), end);
             }
         }
-        boolean accepted = "accepted".equals(msg.optString("txStatus", ""));
+        String status = msg.optString("txStatus", "");
+        boolean handled = !status.isEmpty() || msg.optBoolean("handled", false);
         LinearLayout card = Ui.row(a);
         card.setBackground(Ui.gradient(start, end, Ui.dp(a, 14)));
         card.setPadding(Ui.dp(a, 14), Ui.dp(a, 12), Ui.dp(a, 14), Ui.dp(a, 12));
-        card.setAlpha(accepted ? 0.72f : 1f);
+        card.setAlpha(handled ? 0.72f : 1f);
         card.setMinimumWidth(Ui.dp(a, 210));
         TextView icon = Ui.text(a, ui != null ? ui.optString("icon", "🧧") : "🧧", 26, Color.WHITE);
         card.addView(icon);
@@ -394,48 +395,58 @@ public class ChatPage extends Page {
         else if (msg.has("note") && !msg.optString("note", "").isEmpty()) title = msg.optString("note");
         else title = ui != null ? ui.optString("t", "red".equals(type) ? "恭喜发财" : "转账") : "恭喜发财";
         copy.addView(Ui.boldText(a, title, 14, Color.WHITE));
-        double amount = msg.optDouble("amount", msg.optDouble("price", 0));
-        String sub = ("gift".equals(type) ? "¥" + Ui.fmtMoney(amount) : "¥" + Ui.fmtMoney(amount))
-                + (accepted ? " · 已领取" : "");
+        double amount = ChatLogic.txAmount(msg);
+        String sub = "¥" + Ui.fmtMoney(amount) + " · " + txStatusLabel(msg);
         copy.addView(Ui.text(a, sub, 11, 0xDDFFFFFF));
         card.addView(copy);
         card.setOnClickListener(v -> openTxPop(msg, index));
         return card;
     }
 
-    /** 点开红包/转账/礼物 */
+    private String txStatusLabel(JSONObject msg) {
+        if ("returned".equals(msg.optString("txStatus", ""))) return "已退还";
+        if ("accepted".equals(msg.optString("txStatus", "")) || msg.optBoolean("handled", false)) return "已接收";
+        return "待处理";
+    }
+
+    /** 点开红包/转账/礼物，等价于旧版 openRed() */
     private void openTxPop(JSONObject msg, int index) {
         String type = msg.optString("type");
         boolean mine = "me".equals(msg.optString("side"));
-        double amount = msg.optDouble("amount", msg.optDouble("price", 0));
-        String label = "red".equals(type) ? "红包" : "zhuan".equals(type) ? "转账" : "礼物";
-        boolean accepted = "accepted".equals(msg.optString("txStatus", ""));
-        if (mine) {
-            Dialogs.notice(a, a.store, "🧧", label + " ¥" + Ui.fmtMoney(amount),
-                    accepted ? "对方已领取" : "等待对方领取");
+        double amount = ChatLogic.txAmount(msg);
+        String kind = ChatLogic.txKindLabel(msg);
+        String kindDetail = "gift".equals(type) ? kind + "：" + msg.optString("gift") : kind;
+        boolean handled = !msg.optString("txStatus", "").isEmpty() || msg.optBoolean("handled", false);
+        if (mine || handled) {
+            Dialogs.notice(a, a.store, "🧧", kindDetail + " ¥" + Ui.fmtMoney(amount),
+                    (mine ? "我发出的" : a.store.displayName() + "发来的") + " · " + txStatusLabel(msg));
             return;
         }
-        if (accepted) {
-            Dialogs.notice(a, a.store, "🧧", label + " ¥" + Ui.fmtMoney(amount), "你已领取");
-            return;
-        }
-        Dialogs.confirm(a, a.store, "🧧", "收下这个" + label + "？",
-                "¥" + Ui.fmtMoney(amount), "收下", false, () -> {
-                    try {
-                        msg.put("txStatus", "accepted");
-                        JSONObject role = a.store.role();
-                        JSONObject wallet = role.getJSONObject("wallet");
-                        wallet.put("mine", wallet.optDouble("mine", 0) + amount);
-                        a.store.save();
-                        a.logic.billAdd("his", "me", label + ("gift".equals(type) ? "：" + msg.optString("gift") : ""),
-                                amount, "已领取");
-                        renderChat(false);
-                    } catch (JSONException ignored) {
+        String amountLabel = "red".equals(type) && !msg.has("gift") ? "待揭晓" : "¥" + Ui.fmtMoney(amount);
+        Dialogs.choice(a, a.store, "🧧", kindDetail + " " + amountLabel,
+                "接收后将计入你的余额", "退还", "接收",
+                () -> {
+                    a.logic.finishTransaction(msg, "returned");
+                    a.logic.addSys("我已退还" + kind);
+                },
+                () -> {
+                    a.logic.finishTransaction(msg, "accepted");
+                    a.logic.addSys("我已接收" + kind);
+                    String key = "zhuan".equals(type) ? "zhuan" : msg.has("gift") ? "gift" : "red";
+                    JSONObject recv = a.store.data.optJSONObject("recv");
+                    JSONObject entry = recv != null ? recv.optJSONObject(key) : null;
+                    JSONArray pool = entry != null ? entry.optJSONArray("his") : null;
+                    if (pool != null && pool.length() > 0) {
+                        Dialogs.prompt(a, a.store, "💬", "回复" + a.store.displayName(), "",
+                                "写一句回复…", pool.optString(0), value -> {
+                                    a.logic.addText("me", value);
+                                    a.logic.scheduleReply();
+                                });
                     }
                 });
     }
 
-    private void jumpToMessage(String ref) {
+    public void jumpToMessage(String ref) {
         JSONArray chat = a.store.chat();
         int childIndex = 0;
         for (int i = 0; i < chat.length(); i++) {
@@ -465,9 +476,10 @@ public class ChatPage extends Page {
             JSONArray pokes = role != null ? role.optJSONArray("pokes") : null;
             String poke = pokes != null && pokes.length() > 0 ? pokes.optString(0) : "拍了拍他的头";
             if ("me".equals(side)) {
-                a.logic.addSys("你" + poke.replace("他的", "自己的").replace("他", "自己"));
+                a.logic.addSys("你" + poke.replace("他", "自己"));
             } else {
-                a.logic.addSys("你" + poke);
+                a.logic.addSys("你" + poke.replace("他", a.store.displayName()));
+                a.logic.scheduleReply();
             }
         } else {
             lastAvatarKey = tapKey;
@@ -533,48 +545,43 @@ public class ChatPage extends Page {
         LinearLayout box = Ui.column(a);
         box.setPadding(Ui.dp(a, 10), Ui.dp(a, 10), Ui.dp(a, 10), Ui.dp(a, 10));
 
+        JSONArray emoji = a.store.data.optJSONArray("emoji");
+        List<Integer> commonEmoji = commonEmojiIndexes(emoji);
+        if (!commonEmoji.isEmpty()) {
+            box.addView(Ui.boldText(a, "⭐ 常用表情", 13, Ui.mutedInk(a, a.store)));
+            GridLayout freqGrid = new GridLayout(a);
+            freqGrid.setColumnCount(7);
+            for (int index : commonEmoji) {
+                freqGrid.addView(emojiCell(emoji.optString(index), index));
+            }
+            box.addView(freqGrid);
+        }
         box.addView(Ui.boldText(a, "Emoji", 13, Ui.mutedInk(a, a.store)));
         GridLayout emojiGrid = new GridLayout(a);
         emojiGrid.setColumnCount(7);
-        JSONArray emoji = a.store.data.optJSONArray("emoji");
         for (int i = 0; emoji != null && i < emoji.length(); i++) {
-            final String value = emoji.optString(i);
-            TextView cell = Ui.text(a, value, 20, Ui.ink(a, a.store));
-            cell.setPadding(Ui.dp(a, 8), Ui.dp(a, 8), Ui.dp(a, 8), Ui.dp(a, 8));
-            cell.setOnClickListener(v -> textInput.append(value));
-            emojiGrid.addView(cell);
+            emojiGrid.addView(emojiCell(emoji.optString(i), i));
         }
         box.addView(emojiGrid);
 
+        JSONArray stickers = a.store.data.optJSONArray("stickers");
+        List<Integer> commonStickers = commonStickerIndexes(stickers);
+        if (!commonStickers.isEmpty()) {
+            box.addView(Ui.boldText(a, "⭐ 常用", 13, Ui.mutedInk(a, a.store)));
+            GridLayout freqStickerGrid = new GridLayout(a);
+            freqStickerGrid.setColumnCount(4);
+            for (int index : commonStickers) {
+                View cell = stickerCell(stickers.optString(index), index);
+                if (cell != null) freqStickerGrid.addView(cell);
+            }
+            box.addView(freqStickerGrid);
+        }
         box.addView(Ui.boldText(a, "表情包", 13, Ui.mutedInk(a, a.store)));
         GridLayout stickerGrid = new GridLayout(a);
         stickerGrid.setColumnCount(4);
-        JSONArray stickers = a.store.data.optJSONArray("stickers");
         for (int i = 0; stickers != null && i < stickers.length(); i++) {
-            final String ref = stickers.optString(i);
-            final int index = i;
-            android.graphics.Bitmap bitmap = Ui.decodeDataUrl(a.store.resolveMedia(ref));
-            if (bitmap == null) continue;
-            ImageView image = new ImageView(a);
-            image.setImageBitmap(bitmap);
-            image.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            GridLayout.LayoutParams lp = new GridLayout.LayoutParams();
-            lp.width = Ui.dp(a, 64);
-            lp.height = Ui.dp(a, 64);
-            lp.setMargins(Ui.dp(a, 6), Ui.dp(a, 6), Ui.dp(a, 6), Ui.dp(a, 6));
-            image.setLayoutParams(lp);
-            image.setOnClickListener(v -> {
-                try {
-                    a.logic.addMsg("me", new JSONObject().put("type", "img").put("src", ref));
-                    JSONObject stFreq = a.store.data.optJSONObject("stFreq");
-                    if (stFreq != null) stFreq.put(String.valueOf(index), stFreq.optInt(String.valueOf(index)) + 1);
-                    a.store.save();
-                    closePanel();
-                    a.logic.scheduleReply();
-                } catch (JSONException ignored) {
-                }
-            });
-            stickerGrid.addView(image);
+            View cell = stickerCell(stickers.optString(i), i);
+            if (cell != null) stickerGrid.addView(cell);
         }
         if (stickers == null || stickers.length() == 0) {
             box.addView(hint("暂无表情包，去“字卡 → 表情”添加"));
@@ -583,6 +590,82 @@ public class ChatPage extends Page {
         scroll.addView(box);
         panelBox.addView(scroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+    }
+
+    private TextView emojiCell(String value, int index) {
+        TextView cell = Ui.text(a, value, 20, Ui.ink(a, a.store));
+        cell.setPadding(Ui.dp(a, 8), Ui.dp(a, 8), Ui.dp(a, 8), Ui.dp(a, 8));
+        cell.setOnClickListener(v -> {
+            textInput.append(value);
+            JSONObject freq = a.store.data.optJSONObject("freq");
+            if (freq != null) {
+                try {
+                    freq.put("e" + index, freq.optInt("e" + index) + 1);
+                    a.store.save();
+                } catch (JSONException ignored) {
+                }
+            }
+        });
+        return cell;
+    }
+
+    private ImageView stickerCell(String ref, int index) {
+        android.graphics.Bitmap bitmap = Ui.decodeDataUrl(a.store.resolveMedia(ref));
+        if (bitmap == null) return null;
+        ImageView image = new ImageView(a);
+        image.setImageBitmap(bitmap);
+        image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        GridLayout.LayoutParams lp = new GridLayout.LayoutParams();
+        lp.width = Ui.dp(a, 64);
+        lp.height = Ui.dp(a, 64);
+        lp.setMargins(Ui.dp(a, 6), Ui.dp(a, 6), Ui.dp(a, 6), Ui.dp(a, 6));
+        image.setLayoutParams(lp);
+        image.setOnClickListener(v -> {
+            try {
+                a.logic.addMsg("me", new JSONObject().put("type", "img").put("src", ref));
+                JSONObject stFreq = a.store.data.optJSONObject("stFreq");
+                if (stFreq != null) stFreq.put(String.valueOf(index), stFreq.optInt(String.valueOf(index)) + 1);
+                JSONObject freq = a.store.data.optJSONObject("freq");
+                if (freq != null) freq.put("st" + index, freq.optInt("st" + index) + 1);
+                a.store.save();
+                closePanel();
+                a.logic.scheduleReply();
+            } catch (JSONException ignored) {
+            }
+        });
+        return image;
+    }
+
+    /** 常用 Emoji：按 freq[e+i] 降序取前 8，等价于旧版 renderEmojiPanel() */
+    private List<Integer> commonEmojiIndexes(JSONArray emoji) {
+        List<Integer> result = new ArrayList<>();
+        JSONObject freq = a.store.data.optJSONObject("freq");
+        if (freq == null || emoji == null) return result;
+        List<int[]> counted = new ArrayList<>();
+        for (int i = 0; i < emoji.length(); i++) {
+            int count = freq.optInt("e" + i, 0);
+            if (count > 0) counted.add(new int[]{i, count});
+        }
+        counted.sort((x, y) -> y[1] - x[1]);
+        for (int i = 0; i < Math.min(8, counted.size()); i++) result.add(counted.get(i)[0]);
+        return result;
+    }
+
+    /** 常用表情包：按 freq[st+i] + stFreq[i] 降序取前 6，等价于旧版 renderStickers() */
+    private List<Integer> commonStickerIndexes(JSONArray stickers) {
+        List<Integer> result = new ArrayList<>();
+        if (stickers == null) return result;
+        JSONObject freq = a.store.data.optJSONObject("freq");
+        JSONObject stFreq = a.store.data.optJSONObject("stFreq");
+        List<int[]> counted = new ArrayList<>();
+        for (int i = 0; i < stickers.length(); i++) {
+            int count = (freq != null ? freq.optInt("st" + i, 0) : 0)
+                    + (stFreq != null ? stFreq.optInt(String.valueOf(i), 0) : 0);
+            if (count > 0) counted.add(new int[]{i, count});
+        }
+        counted.sort((x, y) -> y[1] - x[1]);
+        for (int i = 0; i < Math.min(6, counted.size()); i++) result.add(counted.get(i)[0]);
+        return result;
     }
 
     private void buildPlusPanel() {
@@ -661,7 +744,8 @@ public class ChatPage extends Page {
                 JSONArray pokes = role != null ? role.optJSONArray("pokes") : null;
                 String poke = pokes != null && pokes.length() > 0
                         ? pokes.optString(a.store.rand(0, pokes.length() - 1)) : "拍了拍他的头";
-                a.logic.addSys("你" + poke);
+                a.logic.addSys("你" + poke.replace("他", a.store.displayName()));
+                a.logic.scheduleReply();
                 break;
             }
             case "视频通话":
@@ -699,8 +783,7 @@ public class ChatPage extends Page {
                 JSONObject wallet = role.getJSONObject("wallet");
                 double mine = wallet.optDouble("mine", 0);
                 if (value > mine) {
-                    Dialogs.confirm(a, a.store, "¥", "余额不足", "仍然发送后，余额会变成负数",
-                            "继续发送", false, () -> commitTx(type, value, values.get("note")));
+                    a.toast("余额不足");
                     return;
                 }
                 commitTx(type, value, values.get("note"));
@@ -719,8 +802,8 @@ public class ChatPage extends Page {
             if (note != null && !note.trim().isEmpty()) msg.put("note", note.trim());
             JSONObject sent = a.logic.addMsg("me", msg);
             a.store.save();
-            a.logic.billAdd("me", "his", "red".equals(type) ? "红包" : "转账", amount, "已发送");
-            a.logic.hisAutoAccept(sent);
+            a.onWalletChanged();
+            a.logic.scheduleHisDecision(sent);
         } catch (JSONException ignored) {
         }
     }

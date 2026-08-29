@@ -26,6 +26,7 @@ public class MenuPage extends Page {
                 {"📊", "互动周报", "pageWeekly"},
                 {"🔍", "搜索聊天", "pageSearch"},
                 {"☁️", "词云", "pageCloud"},
+                {"⭐", "收藏", "pageFav"},
                 {"📹", "视频通话", "@video"},
                 {"📞", "他来电", "@call"},
         };

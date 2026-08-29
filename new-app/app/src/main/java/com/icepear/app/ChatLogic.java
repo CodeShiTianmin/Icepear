@@ -96,7 +96,7 @@ public final class ChatLogic {
                 host.onChatChanged(false);
             } catch (JSONException ignored) {
             }
-        }, store.rand(1500, 6000));
+        }, store.rand(4, 9) * 1000);
     }
 
     private JSONObject optChatOpt() {
@@ -117,23 +117,104 @@ public final class ChatLogic {
         JSONObject chatOpt = optChatOpt();
         if (chatOpt.optBoolean("hisIgnore", false)
                 && store.rand(0, 99) < reply.optInt("ignoreRate", 20)) {
-            handler.postDelayed(this::markAllRead, 1500);
             return;
         }
         host.onTyping(true);
-        int wait = store.rand(reply.optInt("delayMin", 10), reply.optInt("delayMax", 300)) * 1000;
+        long wait = store.rand(reply.optInt("delayMin", 10), reply.optInt("delayMax", 300)) * 1000L;
+        JSONObject sim = store.data.optJSONObject("sim");
+        int hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY);
+        if (sim != null && sim.optBoolean("bioClock", false) && (hour >= 23 || hour < 7)) {
+            wait = (long) (wait * 2.5);
+        }
         replyRunnable = () -> {
             host.onTyping(false);
+            JSONObject simNow = store.data.optJSONObject("sim");
+            boolean festivalOn = simNow != null && simNow.optBoolean("festival", false);
+            String festival = festivalToday();
+            if (festivalOn && festival != null && Math.random() < 0.4) {
+                addText("other", "今天是" + festival + "，"
+                        + new String[]{"想你", "陪你过节", "节日快乐"}[store.rand(0, 2)]);
+                return;
+            }
+            String memo = memoToday();
+            if (festivalOn && memo != null && Math.random() < 0.4) {
+                addText("other", "今天是「" + memo + "」，"
+                        + new String[]{"一直在心里", "记得呢", "陪你一起"}[store.rand(0, 2)]);
+                return;
+            }
             List<String> pool = store.allCards();
             if (pool.isEmpty()) return;
-            int count = store.rand(reply.optInt("replyMin", 1), reply.optInt("replyMax", 3));
+            java.util.Collections.shuffle(pool);
+            int count = Math.min(pool.size(),
+                    store.rand(reply.optInt("replyMin", 1), reply.optInt("replyMax", 3)));
             int gap = reply.optInt("gap", 3) * 1000;
+            String quoted = lastReadMeText();
             for (int i = 0; i < count; i++) {
-                String pick = pool.get(store.rand(0, pool.size() - 1));
-                handler.postDelayed(() -> addText("other", pick), (long) i * gap);
+                final String pick = pool.get(i);
+                final boolean withQuote = i == 0 && quoted != null && Math.random() < 0.4;
+                final String quoteText = quoted;
+                handler.postDelayed(() -> {
+                    JSONObject msg = new JSONObject();
+                    try {
+                        msg.put("text", pick);
+                        if (withQuote) msg.put("quote", quoteText);
+                    } catch (JSONException ignored) {
+                    }
+                    addMsg("other", msg);
+                }, (long) i * gap);
             }
         };
         handler.postDelayed(replyRunnable, wait);
+    }
+
+    /** 最后一条已读的我方文字消息，等价于旧版 v2LastReadMessage() */
+    private String lastReadMeText() {
+        JSONArray chat = store.chat();
+        for (int i = chat.length() - 1; i >= 0; i--) {
+            JSONObject msg = chat.optJSONObject(i);
+            if (msg == null) continue;
+            if ("me".equals(msg.optString("side")) && !msg.optBoolean("recall", false)
+                    && msg.optString("type", "").isEmpty() && !msg.optString("text", "").isEmpty()
+                    && msg.optBoolean("read", false)) {
+                return msg.optString("text");
+            }
+        }
+        return null;
+    }
+
+    private static final String[][] FESTIVALS = {
+            {"1-1", "元旦"}, {"2-14", "情人节"}, {"5-20", "520"}, {"6-1", "儿童节"},
+            {"10-1", "国庆节"}, {"12-24", "平安夜"}, {"12-25", "圣诞节"}, {"12-31", "跨年"},
+    };
+
+    /** 今天的节日名，等价于旧版 festivalToday() */
+    public String festivalToday() {
+        Calendar now = Calendar.getInstance();
+        String key = (now.get(Calendar.MONTH) + 1) + "-" + now.get(Calendar.DAY_OF_MONTH);
+        for (String[] festival : FESTIVALS) {
+            if (festival[0].equals(key)) return festival[1];
+        }
+        return null;
+    }
+
+    /** 今天的纪念日名，等价于旧版 memoToday() */
+    public String memoToday() {
+        Calendar now = Calendar.getInstance();
+        JSONArray memos = store.data.optJSONArray("memos");
+        for (int i = 0; memos != null && i < memos.length(); i++) {
+            JSONObject memo = memos.optJSONObject(i);
+            if (memo == null) continue;
+            String[] parts = memo.optString("date", "").split("-");
+            if (parts.length < 3) continue;
+            try {
+                if (Integer.parseInt(parts[1]) == now.get(Calendar.MONTH) + 1
+                        && Integer.parseInt(parts[2]) == now.get(Calendar.DAY_OF_MONTH)) {
+                    return memo.optString("name");
+                }
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return null;
     }
 
     public void markAllRead() {
@@ -242,9 +323,9 @@ public final class ChatLogic {
                 amount = pick.optDouble("price", 0);
                 msg.put("gift", pick.optString("name")).put("price", amount);
             } else {
-                int maxCents = (int) Math.min(999999900L, Math.floor(his * 100));
-                amount = store.rand(1, Math.max(1, maxCents)) / 100.0;
-                amount = Math.min(his, amount);
+                int max = (int) Math.min(9999999, Math.max(0, Math.floor(his)));
+                amount = Math.min(his, store.rand(0, max));
+                amount = Math.max(0.01, Math.round(amount * 100) / 100.0);
             }
             msg.put("amount", amount);
             wallet.put("his", his - amount);
@@ -309,30 +390,78 @@ public final class ChatLogic {
         }
     }
 
-    /* ---------- 红包/转账被他领取 ---------- */
+    /* ---------- 交易结算，等价于旧版 v2FinishTransaction / v2ScheduleHisDecision ---------- */
 
-    public void hisAutoAccept(JSONObject msg) {
+    public static double txAmount(JSONObject msg) {
+        return msg.has("gift") ? msg.optDouble("price", 0) : msg.optDouble("amount", 0);
+    }
+
+    public static String txKindLabel(JSONObject msg) {
+        if ("zhuan".equals(msg.optString("type"))) return "转账";
+        return msg.has("gift") ? "礼物" : "红包";
+    }
+
+    /** 结算一笔交易：更新钱包、状态、账单 */
+    public void finishTransaction(JSONObject msg, String status) {
+        try {
+            JSONObject role = store.role();
+            if (role == null || msg == null || !msg.optString("txStatus", "").isEmpty()) return;
+            double amount = txAmount(msg);
+            boolean legacy = msg.optInt("txVersion", 0) != 2;
+            JSONObject wallet = role.getJSONObject("wallet");
+            boolean accepted = "accepted".equals(status);
+            if ("me".equals(msg.optString("side"))) {
+                if (accepted) {
+                    if (!legacy) wallet.put("his", wallet.optDouble("his", 0) + amount);
+                } else if (legacy) {
+                    wallet.put("his", Math.max(0, wallet.optDouble("his", 0) - amount));
+                    wallet.put("mine", wallet.optDouble("mine", 0) + amount);
+                } else {
+                    wallet.put("mine", wallet.optDouble("mine", 0) + amount);
+                }
+            } else if (accepted) {
+                wallet.put("mine", wallet.optDouble("mine", 0) + amount);
+            } else if (!legacy) {
+                wallet.put("his", wallet.optDouble("his", 0) + amount);
+            }
+            msg.put("txStatus", status);
+            msg.put("handled", true);
+            msg.put("read", true);
+            String type = "zhuan".equals(msg.optString("type")) ? "转账"
+                    : msg.has("gift") ? "礼物：" + msg.optString("gift") : "红包";
+            billAdd(msg.optString("side"), "me".equals(msg.optString("side")) ? "his" : "me",
+                    type, amount, accepted ? "已接收" : "已退还");
+            store.save();
+            host.onWalletChanged();
+            host.onChatChanged(false);
+        } catch (JSONException ignored) {
+        }
+    }
+
+    /** 他对我发的红包/转账/礼物做决定：70% 接收，30% 退还 */
+    public void scheduleHisDecision(JSONObject msg) {
         handler.postDelayed(() -> {
             try {
-                if (msg.optBoolean("recall", false)) return;
-                msg.put("txStatus", "accepted");
-                JSONObject role = store.role();
-                if (role != null) {
-                    JSONObject wallet = role.getJSONObject("wallet");
-                    double amount = msg.optDouble("amount", msg.optDouble("price", 0));
-                    wallet.put("his", wallet.optDouble("his", 0) + amount);
+                if (msg == null || !msg.optString("txStatus", "").isEmpty()
+                        || msg.optBoolean("handled", false) || msg.optBoolean("recall", false)) return;
+                boolean accepted = Math.random() < 0.7;
+                finishTransaction(msg, accepted ? "accepted" : "returned");
+                String kind = txKindLabel(msg);
+                addSys(store.displayName() + (accepted ? "已接收" : "已退还") + kind);
+                if (accepted) {
+                    String key = "zhuan".equals(msg.optString("type")) ? "zhuan"
+                            : msg.has("gift") ? "gift" : "red";
+                    JSONObject recv = store.data.optJSONObject("recv");
+                    JSONObject entry = recv != null ? recv.optJSONObject(key) : null;
+                    JSONArray pool = entry != null ? entry.optJSONArray("mine") : null;
+                    if (pool != null && pool.length() > 0) {
+                        final String text = pool.optString(store.rand(0, pool.length() - 1));
+                        handler.postDelayed(() -> addText("other", text), store.rand(2, 4) * 1000L);
+                    }
                 }
-                store.save();
-                host.onChatChanged(false);
-                host.onWalletChanged();
-                JSONArray bless = store.data.optJSONArray("bless");
-                if (bless != null && bless.length() > 0 && store.rand(0, 1) == 0) {
-                    handler.postDelayed(() -> addText("other",
-                            bless.optString(store.rand(0, bless.length() - 1))), store.rand(1500, 5000));
-                }
-            } catch (JSONException ignored) {
+            } catch (Exception ignored) {
             }
-        }, store.rand(2000, 12000));
+        }, store.rand(3, 6) * 1000L);
     }
 
     /* ---------- 节日祝福 / 自动夜间模式 ---------- */

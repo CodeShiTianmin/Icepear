@@ -404,6 +404,9 @@ public class SettingsPage extends Page {
         JSONObject wallpaper = a.store.data.optJSONObject("wallpaper");
         body.addView(valueRow("聊天壁纸", wallpaper.optString("image", "").isEmpty()
                 ? wallpaper.optString("preset", "默认") : "自定义图片", this::pickWallpaper));
+        body.addView(valueRow("开屏动画", bootAnimLabel(), this::pickBootAnim));
+        body.addView(valueRow("视频通话背景", a.store.data.optString("videoBg", "").isEmpty()
+                ? "默认" : "自定义图片", this::pickVideoBg));
         JSONObject beauty = a.store.data.optJSONObject("beauty");
         body.addView(valueRow("全局美化 · 页面底色", beauty.optString("pageBg", "#f8f3ef"), () ->
                 promptColor(beauty, "pageBg", "页面底色")));
@@ -499,6 +502,112 @@ public class SettingsPage extends Page {
                 }
                 a.store.save();
                 rebuildChat();
+            } catch (JSONException ignored) {
+            }
+        });
+    }
+
+    /* ---------- 开屏动画 ---------- */
+
+    private JSONObject icepearUi() {
+        JSONObject ui = a.store.data.optJSONObject("icepearUi");
+        if (ui == null) {
+            ui = new JSONObject();
+            try {
+                a.store.data.put("icepearUi", ui);
+            } catch (JSONException ignored) {
+            }
+        }
+        return ui;
+    }
+
+    private String bootAnimLabel() {
+        switch (icepearUi().optString("bootAnim", "hearts")) {
+            case "bubbles": return "气泡上升";
+            case "stars": return "星星闪烁";
+            case "avatar": return "头像碰碰";
+            case "off": return "关闭";
+            default: return "爱心飘动";
+        }
+    }
+
+    private void pickBootAnim() {
+        JSONObject ui = icepearUi();
+        Dialogs.Field anim = new Dialogs.Field("anim", "开屏动画");
+        anim.optionValues = new String[]{"hearts", "bubbles", "stars", "avatar", "off", "@image", "@clearImg"};
+        anim.optionLabels = new String[]{"爱心飘动", "气泡上升", "星星闪烁", "头像碰碰", "关闭动画",
+                "选择自定义图片（叠在动画上方）…", "清除自定义图片"};
+        anim.value = ui.optString("bootAnim", "hearts");
+        Dialogs.form(a, a.store, "✧", "开屏动画", "下次启动时生效", "保存", Dialogs.fields(anim), values -> {
+            String pick = values.get("anim");
+            try {
+                if ("@image".equals(pick)) {
+                    a.pickFile("image/*", (bytes, mime, name) -> {
+                        if (bytes.length > 2 * 1024 * 1024) {
+                            Dialogs.notice(a, a.store, "!", "图片太大", "请选择2MB以内的图片，否则启动会变慢。");
+                            return;
+                        }
+                        String ref = a.store.importImage(bytes, mime);
+                        if (ref.isEmpty()) {
+                            a.toast("图片导入失败");
+                            return;
+                        }
+                        try {
+                            a.store.deleteMedia(ui.optString("bootImg", ""));
+                            ui.put("bootImg", ref);
+                            a.store.save();
+                            a.toast("图片已设置，会叠在开屏动画上方显示");
+                        } catch (JSONException ignored) {
+                        }
+                    });
+                    return;
+                }
+                if ("@clearImg".equals(pick)) {
+                    a.store.deleteMedia(ui.optString("bootImg", ""));
+                    ui.put("bootImg", "");
+                } else {
+                    ui.put("bootAnim", pick);
+                }
+                a.store.save();
+                refresh();
+            } catch (JSONException ignored) {
+            }
+        });
+    }
+
+    /* ---------- 视频通话背景 ---------- */
+
+    private void pickVideoBg() {
+        Dialogs.Field mode = new Dialogs.Field("mode", "视频背景");
+        mode.optionValues = new String[]{"@image", "@clear"};
+        mode.optionLabels = new String[]{"从相册选择…", "恢复默认背景"};
+        mode.value = "@image";
+        Dialogs.form(a, a.store, "📹", "视频通话背景", null, "应用", Dialogs.fields(mode), values -> {
+            String pick = values.get("mode");
+            try {
+                if ("@image".equals(pick)) {
+                    a.pickFile("image/*", (bytes, mime, name) -> {
+                        String ref = a.store.importImage(bytes, mime);
+                        if (ref.isEmpty()) {
+                            a.toast("图片导入失败");
+                            return;
+                        }
+                        try {
+                            a.store.deleteMedia(a.store.data.optString("videoBg", ""));
+                            a.store.data.put("videoBg", ref);
+                            a.store.save();
+                            refresh();
+                            a.toast("视频背景已更新");
+                        } catch (JSONException ignored) {
+                        }
+                    });
+                    return;
+                }
+                a.store.deleteMedia(a.store.data.optString("videoBg", ""));
+                a.store.data.put("videoBg", "");
+                a.store.save();
+                refresh();
+                a.toast("已恢复默认背景");
             } catch (JSONException ignored) {
             }
         });
@@ -669,11 +778,74 @@ public class SettingsPage extends Page {
         body.addView(button("⬇ 备份全部数据（JSON）", false, this::exportBackup));
         body.addView(button("⬆ 从备份恢复", false, this::importBackup));
         body.addView(button("📄 导出聊天记录（文本）", false, this::exportChat));
+        body.addView(button("🕘 保存数据快照", false, this::saveSnapshot));
+        renderSnapshots(body);
         body.addView(dangerButton("清空当前角色聊天记录", this::clearChat));
         body.addView(dangerButton("重置全部数据", () ->
                 Dialogs.confirm(a, a.store, "⚠", "重置全部数据？", "所有角色、聊天、设置都会被清空",
                         "全部重置", true, a::resetAllData)));
         content.addView(section);
+    }
+
+    /* ---------- 历史快照 ---------- */
+
+    private void saveSnapshot() {
+        java.text.SimpleDateFormat fmt = new java.text.SimpleDateFormat(
+                "MM-dd HH:mm", java.util.Locale.CHINA);
+        Dialogs.prompt(a, a.store, "🕘", "保存快照", "快照名称", "例如：改动前备份",
+                "快照 " + fmt.format(new java.util.Date()), value -> {
+                    try {
+                        a.store.saveSnapshot(value);
+                        refresh();
+                        a.toast("快照已保存");
+                    } catch (JSONException e) {
+                        a.toast("快照保存失败");
+                    }
+                });
+    }
+
+    private void renderSnapshots(LinearLayout body) {
+        JSONArray snaps = a.store.data.optJSONArray("snapshots");
+        if (snaps == null || snaps.length() == 0) {
+            body.addView(hint("暂无历史快照（最多保留 10 个）"));
+            return;
+        }
+        java.text.SimpleDateFormat fmt = new java.text.SimpleDateFormat(
+                "yyyy-MM-dd HH:mm", java.util.Locale.CHINA);
+        for (int i = snaps.length() - 1; i >= 0; i--) {
+            final int index = i;
+            JSONObject snap = snaps.optJSONObject(i);
+            if (snap == null) continue;
+            LinearLayout row = Ui.row(a);
+            row.setPadding(0, Ui.dp(a, 6), 0, Ui.dp(a, 6));
+            LinearLayout info = Ui.column(a);
+            info.addView(Ui.text(a, "🕘 " + snap.optString("name", "快照"), 13, Ui.ink(a, a.store)));
+            TextView time = Ui.text(a, fmt.format(new java.util.Date(snap.optLong("t"))), 11, Ui.faintInk(a, a.store));
+            info.addView(time);
+            row.addView(info, Ui.weighted());
+            TextView restore = Ui.boldText(a, "恢复", 12, Ui.plum(a, a.store));
+            restore.setOnClickListener(v -> Dialogs.confirm(a, a.store, "🕘", "恢复到这个快照？",
+                    "当前数据会被快照内容覆盖（快照列表会保留）", "恢复", false, () -> {
+                        try {
+                            a.store.restoreSnapshot(index);
+                            a.afterDataImported();
+                            a.toast("已恢复快照");
+                        } catch (JSONException e) {
+                            a.toast("恢复失败，快照数据损坏");
+                        }
+                    }));
+            row.addView(restore);
+            TextView del = Ui.boldText(a, "删除", 12, a.getColor(R.color.danger));
+            del.setPadding(Ui.dp(a, 14), 0, 0, 0);
+            del.setOnClickListener(v -> Dialogs.confirm(a, a.store, "⌫", "删除这个快照？", null,
+                    "删除", true, () -> {
+                        snaps.remove(index);
+                        a.store.save();
+                        refresh();
+                    }));
+            row.addView(del);
+            body.addView(row);
+        }
     }
 
     private void exportBackup() {

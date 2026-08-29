@@ -75,9 +75,25 @@ public final class Store {
         try {
             if (!data.has("roles")) {
                 JSONObject roles = new JSONObject();
-                roles.put("r1", newRole("他"));
+                JSONObject first = newRole("他");
+                first.put("shop", starterShop());
+                first.getJSONArray("chat").put(new JSONObject()
+                        .put("id", uid("msg")).put("side", "other")
+                        .put("text", "嗨，我在这里。今天想聊点什么？")
+                        .put("t", System.currentTimeMillis()).put("read", true));
+                roles.put("r1", first);
                 data.put("roles", roles);
                 data.put("activeRole", "r1");
+                data.put("reply", new JSONObject()
+                        .put("delayMin", 2).put("delayMax", 7)
+                        .put("replyMin", 1).put("replyMax", 2).put("gap", 2)
+                        .put("active", false).put("activeMin", 300).put("activeMax", 1800)
+                        .put("statusGap", 600).put("ignoreRate", 20).put("enterSend", true));
+                data.put("theme", new JSONObject()
+                        .put("myBg", "#6d3b58").put("myText", "#ffffff")
+                        .put("hisBg", "#fffaf7").put("hisText", "#2d252a"));
+                data.put("font", new JSONObject()
+                        .put("name", "sans-serif").put("size", 16).put("radius", 18).put("topSkin", false));
             }
             if (!data.has("stickers")) data.put("stickers", new JSONArray());
             if (!data.has("memos")) data.put("memos", new JSONArray());
@@ -159,7 +175,7 @@ public final class Store {
         role.put("name", name).put("nickname", "").put("avatar", "🧑")
                 .put("myName", "我").put("myAvatar", "我")
                 .put("wallet", new JSONObject().put("his", 100).put("mine", 100))
-                .put("cards", new JSONObject().put("默认", new JSONArray()))
+                .put("cards", starterCards())
                 .put("statuses", jsonArray("想你")).put("statusNow", "想你")
                 .put("pokes", jsonArray("拍了拍他的头"))
                 .put("shop", new JSONArray()).put("letters", new JSONArray())
@@ -167,6 +183,33 @@ public final class Store {
                 .put("moments", new JSONArray())
                 .put("weekly", new JSONObject().put("key", "").put("date", "").put("stats", JSONObject.NULL));
         return role;
+    }
+
+    /** 初始字卡，等价于旧版 v2StarterCards() */
+    public static JSONObject starterCards() throws JSONException {
+        JSONObject cards = new JSONObject();
+        cards.put("日常", jsonArray(
+                "我在，慢慢说。", "今天过得怎么样？", "先喝口水，再继续忙。", "刚刚突然想到你。",
+                "你愿意讲的话，我会认真听。", "别急，我们一件一件来。", "有我陪你呢。", "今天也辛苦啦。"));
+        cards.put("关心", jsonArray(
+                "不舒服就休息一下，好吗？", "你已经做得很好了。", "不用一直坚强。", "我更在意你的感受。",
+                "先照顾好自己，其他事情可以晚一点。", "抱抱你。", "别把所有情绪都藏起来。", "我没有走开。"));
+        cards.put("晚安", jsonArray(
+                "晚安，祝你做一个轻轻的梦。", "把今天放下吧，明天再继续。", "盖好被子，别着凉。", "睡醒记得来找我。",
+                "今天的你也值得被好好珍惜。", "去休息吧，我在这里。"));
+        cards.put("小情绪", jsonArray(
+                "哼，那你要哄哄我。", "好吧，只原谅你一点点。", "想和你多待一会儿。", "你是不是忘了想我？",
+                "不许偷偷难过。", "再靠近一点。"));
+        return cards;
+    }
+
+    /** 初始商品，等价于旧版 fresh 数据的默认小卖铺 */
+    private static JSONArray starterShop() throws JSONException {
+        JSONArray shop = new JSONArray();
+        shop.put(new JSONObject().put("name", "草莓奶油蛋糕").put("price", 28).put("cat", "food").put("wm", true));
+        shop.put(new JSONObject().put("name", "热可可").put("price", 16).put("cat", "drink").put("wm", true));
+        shop.put(new JSONObject().put("name", "香薰蜡烛").put("price", 39).put("cat", "daily").put("wm", false));
+        return shop;
     }
 
     /** 保证 2.3.0 数据字段齐全：商品分组、余额兜底文案、消息/动态 id */
@@ -312,6 +355,35 @@ public final class Store {
         if (s.startsWith("\uFEFF")) s = s.substring(1);
         data = new JSONObject(s);
         ensureDefaults();
+        save();
+    }
+
+    /* ---------- 历史快照 ---------- */
+
+    public void saveSnapshot(String name) throws JSONException {
+        JSONArray snaps = data.optJSONArray("snapshots");
+        if (snaps == null) {
+            snaps = new JSONArray();
+            data.put("snapshots", snaps);
+        }
+        JSONObject copy = new JSONObject(data.toString());
+        copy.remove("snapshots");
+        if (snaps.length() >= 10) snaps.remove(0);
+        snaps.put(new JSONObject()
+                .put("t", System.currentTimeMillis())
+                .put("name", name == null || name.trim().isEmpty() ? "快照" : name.trim())
+                .put("data", copy.toString()));
+        save();
+    }
+
+    public void restoreSnapshot(int index) throws JSONException {
+        JSONArray snaps = data.optJSONArray("snapshots");
+        if (snaps == null || index < 0 || index >= snaps.length()) return;
+        JSONObject restored = new JSONObject(snaps.getJSONObject(index).getString("data"));
+        restored.put("snapshots", snaps);
+        data = restored;
+        ensureDefaults();
+        ensureV230Data();
         save();
     }
 
