@@ -342,8 +342,7 @@ public class ShopPage extends Page {
         double price = product.optDouble("price", 0);
         JSONObject wallet = a.store.role().optJSONObject("wallet");
         if (wallet != null && price > wallet.optDouble("mine", 0)) {
-            Dialogs.confirm(a, a.store, "¥", "余额不足", "仍然送出后，余额会变成负数",
-                    "继续送出", false, () -> commitGift(product));
+            a.toast("余额不足");
             return;
         }
         commitGift(product);
@@ -360,12 +359,10 @@ public class ShopPage extends Page {
                     .put("amount", price).put("read", false)
                     .put("txVersion", 2).put("txStatus", "");
             JSONObject sent = a.logic.addMsg("me", msg);
-            a.logic.billAdd("me", "his", "礼物：" + product.optString("name"), price, "已送出");
             a.store.save();
             refresh();
-            a.toast("已送出");
-            a.logic.hisAutoAccept(sent);
-            a.logic.scheduleReply();
+            a.toast("礼物已送出");
+            a.logic.scheduleHisDecision(sent);
         } catch (JSONException ignored) {
         }
     }

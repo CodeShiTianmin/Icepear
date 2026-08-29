@@ -66,6 +66,12 @@ public final class Dialogs {
     private static Dialog baseDialog(Context c, Store store, String icon, String title, String subtitle,
                                      View body, String cancelText, String confirmText, boolean danger,
                                      Runnable onConfirm) {
+        return baseDialog(c, store, icon, title, subtitle, body, cancelText, confirmText, danger, onConfirm, null);
+    }
+
+    private static Dialog baseDialog(Context c, Store store, String icon, String title, String subtitle,
+                                     View body, String cancelText, String confirmText, boolean danger,
+                                     Runnable onConfirm, Runnable onCancel) {
         Dialog dialog = new Dialog(c);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
         int pad = Ui.dp(c, 20);
@@ -99,7 +105,10 @@ public final class Dialogs {
         actions.setGravity(Gravity.END);
         if (cancelText != null) {
             TextView cancel = actionButton(c, store, cancelText, false, false);
-            cancel.setOnClickListener(v -> dialog.dismiss());
+            cancel.setOnClickListener(v -> {
+                if (onCancel != null) onCancel.run();
+                dialog.dismiss();
+            });
             actions.addView(cancel);
         }
         if (confirmText != null) {
@@ -149,6 +158,12 @@ public final class Dialogs {
                                String confirmText, boolean danger, OnConfirm onConfirm) {
         baseDialog(c, store, icon, title, subtitle, null, "取消",
                 confirmText == null ? "确定" : confirmText, danger, onConfirm::run).show();
+    }
+
+    /** 两个动作都有回调的选择弹窗，对应旧版 showCard 的双按钮形态 */
+    public static void choice(Context c, Store store, String icon, String title, String subtitle,
+                              String noText, String yesText, Runnable onNo, Runnable onYes) {
+        baseDialog(c, store, icon, title, subtitle, null, noText, yesText, false, onYes, onNo).show();
     }
 
     /** appPrompt：单行输入 */

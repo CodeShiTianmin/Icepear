@@ -379,11 +379,12 @@ public class ChatPage extends Page {
                 end = Ui.parseColor(pair.optString(1), end);
             }
         }
-        boolean accepted = "accepted".equals(msg.optString("txStatus", ""));
+        String status = msg.optString("txStatus", "");
+        boolean handled = !status.isEmpty() || msg.optBoolean("handled", false);
         LinearLayout card = Ui.row(a);
         card.setBackground(Ui.gradient(start, end, Ui.dp(a, 14)));
         card.setPadding(Ui.dp(a, 14), Ui.dp(a, 12), Ui.dp(a, 14), Ui.dp(a, 12));
-        card.setAlpha(accepted ? 0.72f : 1f);
+        card.setAlpha(handled ? 0.72f : 1f);
         card.setMinimumWidth(Ui.dp(a, 210));
         TextView icon = Ui.text(a, ui != null ? ui.optString("icon", "🧧") : "🧧", 26, Color.WHITE);
         card.addView(icon);
@@ -394,43 +395,53 @@ public class ChatPage extends Page {
         else if (msg.has("note") && !msg.optString("note", "").isEmpty()) title = msg.optString("note");
         else title = ui != null ? ui.optString("t", "red".equals(type) ? "恭喜发财" : "转账") : "恭喜发财";
         copy.addView(Ui.boldText(a, title, 14, Color.WHITE));
-        double amount = msg.optDouble("amount", msg.optDouble("price", 0));
-        String sub = ("gift".equals(type) ? "¥" + Ui.fmtMoney(amount) : "¥" + Ui.fmtMoney(amount))
-                + (accepted ? " · 已领取" : "");
+        double amount = ChatLogic.txAmount(msg);
+        String sub = "¥" + Ui.fmtMoney(amount) + " · " + txStatusLabel(msg);
         copy.addView(Ui.text(a, sub, 11, 0xDDFFFFFF));
         card.addView(copy);
         card.setOnClickListener(v -> openTxPop(msg, index));
         return card;
     }
 
-    /** 点开红包/转账/礼物 */
+    private String txStatusLabel(JSONObject msg) {
+        if ("returned".equals(msg.optString("txStatus", ""))) return "已退还";
+        if ("accepted".equals(msg.optString("txStatus", "")) || msg.optBoolean("handled", false)) return "已接收";
+        return "待处理";
+    }
+
+    /** 点开红包/转账/礼物，等价于旧版 openRed() */
     private void openTxPop(JSONObject msg, int index) {
         String type = msg.optString("type");
         boolean mine = "me".equals(msg.optString("side"));
-        double amount = msg.optDouble("amount", msg.optDouble("price", 0));
-        String label = "red".equals(type) ? "红包" : "zhuan".equals(type) ? "转账" : "礼物";
-        boolean accepted = "accepted".equals(msg.optString("txStatus", ""));
-        if (mine) {
-            Dialogs.notice(a, a.store, "🧧", label + " ¥" + Ui.fmtMoney(amount),
-                    accepted ? "对方已领取" : "等待对方领取");
+        double amount = ChatLogic.txAmount(msg);
+        String kind = ChatLogic.txKindLabel(msg);
+        String kindDetail = "gift".equals(type) ? kind + "：" + msg.optString("gift") : kind;
+        boolean handled = !msg.optString("txStatus", "").isEmpty() || msg.optBoolean("handled", false);
+        if (mine || handled) {
+            Dialogs.notice(a, a.store, "🧧", kindDetail + " ¥" + Ui.fmtMoney(amount),
+                    (mine ? "我发出的" : a.store.displayName() + "发来的") + " · " + txStatusLabel(msg));
             return;
         }
-        if (accepted) {
-            Dialogs.notice(a, a.store, "🧧", label + " ¥" + Ui.fmtMoney(amount), "你已领取");
-            return;
-        }
-        Dialogs.confirm(a, a.store, "🧧", "收下这个" + label + "？",
-                "¥" + Ui.fmtMoney(amount), "收下", false, () -> {
-                    try {
-                        msg.put("txStatus", "accepted");
-                        JSONObject role = a.store.role();
-                        JSONObject wallet = role.getJSONObject("wallet");
-                        wallet.put("mine", wallet.optDouble("mine", 0) + amount);
-                        a.store.save();
-                        a.logic.billAdd("his", "me", label + ("gift".equals(type) ? "：" + msg.optString("gift") : ""),
-                                amount, "已领取");
-                        renderChat(false);
-                    } catch (JSONException ignored) {
+        String amountLabel = "red".equals(type) && !msg.has("gift") ? "待揭晓" : "¥" + Ui.fmtMoney(amount);
+        Dialogs.choice(a, a.store, "🧧", kindDetail + " " + amountLabel,
+                "接收后将计入你的余额", "退还", "接收",
+                () -> {
+                    a.logic.finishTransaction(msg, "returned");
+                    a.logic.addSys("我已退还" + kind);
+                },
+                () -> {
+                    a.logic.finishTransaction(msg, "accepted");
+                    a.logic.addSys("我已接收" + kind);
+                    String key = "zhuan".equals(type) ? "zhuan" : msg.has("gift") ? "gift" : "red";
+                    JSONObject recv = a.store.data.optJSONObject("recv");
+                    JSONObject entry = recv != null ? recv.optJSONObject(key) : null;
+                    JSONArray pool = entry != null ? entry.optJSONArray("his") : null;
+                    if (pool != null && pool.length() > 0) {
+                        Dialogs.prompt(a, a.store, "💬", "回复" + a.store.displayName(), "",
+                                "写一句回复…", pool.optString(0), value -> {
+                                    a.logic.addText("me", value);
+                                    a.logic.scheduleReply();
+                                });
                     }
                 });
     }
@@ -465,9 +476,10 @@ public class ChatPage extends Page {
             JSONArray pokes = role != null ? role.optJSONArray("pokes") : null;
             String poke = pokes != null && pokes.length() > 0 ? pokes.optString(0) : "拍了拍他的头";
             if ("me".equals(side)) {
-                a.logic.addSys("你" + poke.replace("他的", "自己的").replace("他", "自己"));
+                a.logic.addSys("你" + poke.replace("他", "自己"));
             } else {
-                a.logic.addSys("你" + poke);
+                a.logic.addSys("你" + poke.replace("他", a.store.displayName()));
+                a.logic.scheduleReply();
             }
         } else {
             lastAvatarKey = tapKey;
@@ -661,7 +673,8 @@ public class ChatPage extends Page {
                 JSONArray pokes = role != null ? role.optJSONArray("pokes") : null;
                 String poke = pokes != null && pokes.length() > 0
                         ? pokes.optString(a.store.rand(0, pokes.length() - 1)) : "拍了拍他的头";
-                a.logic.addSys("你" + poke);
+                a.logic.addSys("你" + poke.replace("他", a.store.displayName()));
+                a.logic.scheduleReply();
                 break;
             }
             case "视频通话":
@@ -699,8 +712,7 @@ public class ChatPage extends Page {
                 JSONObject wallet = role.getJSONObject("wallet");
                 double mine = wallet.optDouble("mine", 0);
                 if (value > mine) {
-                    Dialogs.confirm(a, a.store, "¥", "余额不足", "仍然发送后，余额会变成负数",
-                            "继续发送", false, () -> commitTx(type, value, values.get("note")));
+                    a.toast("余额不足");
                     return;
                 }
                 commitTx(type, value, values.get("note"));
@@ -719,8 +731,8 @@ public class ChatPage extends Page {
             if (note != null && !note.trim().isEmpty()) msg.put("note", note.trim());
             JSONObject sent = a.logic.addMsg("me", msg);
             a.store.save();
-            a.logic.billAdd("me", "his", "red".equals(type) ? "红包" : "转账", amount, "已发送");
-            a.logic.hisAutoAccept(sent);
+            a.onWalletChanged();
+            a.logic.scheduleHisDecision(sent);
         } catch (JSONException ignored) {
         }
     }
