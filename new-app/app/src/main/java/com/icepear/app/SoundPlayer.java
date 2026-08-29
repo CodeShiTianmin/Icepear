@@ -85,6 +85,8 @@ public final class SoundPlayer {
                         .build();
                 track.write(pcm, 0, pcm.length);
                 track.play();
+                Thread.sleep((long) (pcm.length * 1000L / SAMPLE_RATE) + 150);
+                track.release();
             } catch (Exception ignored) {
             }
         }).start();
@@ -119,6 +121,13 @@ public final class SoundPlayer {
             mediaPlayer.prepare();
             mediaPlayer.start();
         } catch (Exception ignored) {
+        }
+    }
+
+    public void release() {
+        if (mediaPlayer != null) {
+            mediaPlayer.release();
+            mediaPlayer = null;
         }
     }
 }

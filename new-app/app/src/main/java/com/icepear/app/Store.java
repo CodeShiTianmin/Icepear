@@ -355,6 +355,14 @@ public final class Store {
         }
     }
 
+    public void clearAllMedia() {
+        File[] files = mediaDir.listFiles();
+        for (int i = 0; files != null && i < files.length; i++) {
+            //noinspection ResultOfMethodCallIgnored
+            files[i].delete();
+        }
+    }
+
     public void deleteMedia(String ref) {
         if (ref != null && ref.startsWith("idb:")) {
             //noinspection ResultOfMethodCallIgnored

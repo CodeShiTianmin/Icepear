@@ -65,10 +65,15 @@ public class DailyPage extends Page {
         Calendar now = Calendar.getInstance();
         String key = now.get(Calendar.YEAR) + "-" + (now.get(Calendar.MONTH) + 1)
                 + "-" + now.get(Calendar.DAY_OF_MONTH);
-        JSONObject daily = a.store.data.optJSONObject("daily");
+        JSONObject prefs = a.store.data.optJSONObject("icepearUi");
+        if (prefs == null) {
+            prefs = new JSONObject();
+            a.store.data.put("icepearUi", prefs);
+        }
+        JSONObject daily = prefs.optJSONObject("dailyCache");
         if (daily == null) {
             daily = new JSONObject();
-            a.store.data.put("daily", daily);
+            prefs.put("dailyCache", daily);
         }
         JSONObject today = daily.optJSONObject(key);
         if (today != null) return today;
