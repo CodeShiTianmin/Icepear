@@ -355,15 +355,16 @@ public class ShopPage extends Page {
             JSONObject wallet = role.getJSONObject("wallet");
             double price = product.optDouble("price", 0);
             wallet.put("mine", wallet.optDouble("mine", 0) - price);
-            wallet.put("his", wallet.optDouble("his", 0) + price);
             JSONObject msg = new JSONObject().put("type", "gift")
                     .put("gift", product.optString("name")).put("price", price)
-                    .put("amount", price).put("read", false);
-            a.logic.addMsg("me", msg);
+                    .put("amount", price).put("read", false)
+                    .put("txVersion", 2).put("txStatus", "");
+            JSONObject sent = a.logic.addMsg("me", msg);
             a.logic.billAdd("me", "his", "礼物：" + product.optString("name"), price, "已送出");
             a.store.save();
             refresh();
             a.toast("已送出");
+            a.logic.hisAutoAccept(sent);
             a.logic.scheduleReply();
         } catch (JSONException ignored) {
         }

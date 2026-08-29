@@ -689,7 +689,7 @@ public class SettingsPage extends Page {
 
     private void importBackup() {
         Dialogs.confirm(a, a.store, "⚠", "从备份恢复？", "当前数据会被备份内容覆盖", "选择备份文件",
-                false, () -> a.pickFile("application/json", (bytes, mime, name) -> {
+                false, () -> a.pickFile("*/*", (bytes, mime, name) -> {
                     try {
                         a.store.importJson(new String(bytes, StandardCharsets.UTF_8));
                         a.afterDataImported();

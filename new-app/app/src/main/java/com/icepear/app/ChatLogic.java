@@ -74,6 +74,9 @@ public final class ChatLogic {
             if ("other".equals(side) && soundOpt != null && soundOpt.optBoolean("onRecv", true)) {
                 sound.play(soundOpt.optString("type", "dingdong"));
             }
+            if ("me".equals(side) && soundOpt != null && soundOpt.optBoolean("onSend", false)) {
+                sound.play(soundOpt.optString("type", "dingdong"));
+            }
             if ("me".equals(side) && !msg.optBoolean("recall", false)) {
                 markReadLater(msg);
             }
@@ -239,7 +242,8 @@ public final class ChatLogic {
                 amount = pick.optDouble("price", 0);
                 msg.put("gift", pick.optString("name")).put("price", amount);
             } else {
-                amount = Math.max(0.01, Math.round(store.rand(0, (int) Math.min(9999999, his)) * 100) / 100.0);
+                int maxCents = (int) Math.min(999999900L, Math.floor(his * 100));
+                amount = store.rand(1, Math.max(1, maxCents)) / 100.0;
                 amount = Math.min(his, amount);
             }
             msg.put("amount", amount);

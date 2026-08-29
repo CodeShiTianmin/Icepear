@@ -1,7 +1,6 @@
 package com.icepear.app;
 
 import android.graphics.Color;
-import android.graphics.Typeface;
 import android.speech.tts.TextToSpeech;
 import android.text.InputType;
 import android.view.Gravity;
@@ -10,7 +9,6 @@ import android.view.ViewGroup;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.GridLayout;
-import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.PopupWindow;
@@ -51,7 +49,6 @@ public class ChatPage extends Page {
 
     private String quoteTarget;
     private String quoteRef = "";
-    private boolean multiMode;
     private final Set<Integer> selected = new TreeSet<>();
     private boolean selecting;
     private TextToSpeech tts;
@@ -370,10 +367,8 @@ public class ChatPage extends Page {
     /** 红包/转账/礼物卡片 */
     private View buildTxCard(JSONObject msg, int index) {
         String type = msg.optString("type");
-        String typeKey = "red".equals(type) && msg.has("gift") && !"gift".equals(type) && msg.optString("gift", "").isEmpty()
-                ? "red" : type;
         JSONObject cardUi = a.store.data.optJSONObject("cardUi");
-        JSONObject ui = cardUi != null ? cardUi.optJSONObject(typeKey) : null;
+        JSONObject ui = cardUi != null ? cardUi.optJSONObject(type) : null;
         JSONArray colors = a.store.data.optJSONArray("cardColors");
         int colorIndex = ui != null ? ui.optInt("color", 0) : 0;
         int start = 0xFFFA9D3B, end = 0xFFF76B1C;
@@ -442,10 +437,12 @@ public class ChatPage extends Page {
 
     private void jumpToMessage(String ref) {
         JSONArray chat = a.store.chat();
+        int childIndex = 0;
         for (int i = 0; i < chat.length(); i++) {
             JSONObject msg = chat.optJSONObject(i);
-            if (msg != null && ref.equals(msg.optString("id"))) {
-                final int index = i;
+            if (msg == null) continue;
+            if (ref.equals(msg.optString("id"))) {
+                final int index = childIndex;
                 chatScroll.post(() -> {
                     if (index < chatArea.getChildCount()) {
                         chatScroll.smoothScrollTo(0, chatArea.getChildAt(index).getTop());
@@ -453,6 +450,7 @@ public class ChatPage extends Page {
                 });
                 return;
             }
+            childIndex++;
         }
     }
 
@@ -482,10 +480,6 @@ public class ChatPage extends Page {
     private void sendUser() {
         String raw = textInput.getText().toString();
         if (raw.trim().isEmpty()) return;
-        JSONObject soundOpt = a.store.data.optJSONObject("sound");
-        if (soundOpt != null && soundOpt.optBoolean("onSend", false)) {
-            a.sound.play(soundOpt.optString("type", "dingdong"));
-        }
         try {
             JSONObject msg = new JSONObject().put("text", raw.trim());
             if (quoteTarget != null) {
@@ -755,7 +749,7 @@ public class ChatPage extends Page {
         if (!text.isEmpty()) actions.add(new String[]{"forward", "转发"});
         actions.add(new String[]{"favorite", msg.optBoolean("favorite", false) ? "取消收藏" : "收藏"});
         if (mine && !msg.optBoolean("recall", false)) actions.add(new String[]{"recall", "撤回"});
-        else actions.add(new String[]{"delete", "删除"});
+        actions.add(new String[]{"delete", "删除"});
         actions.add(new String[]{"multi", "多选"});
         if (!msg.optBoolean("recall", false) && !"sys".equals(msg.optString("type"))) {
             actions.add(new String[]{"quote", "引用"});
@@ -914,6 +908,14 @@ public class ChatPage extends Page {
             tts.stop();
             tts.speak(joined, TextToSpeech.QUEUE_FLUSH, null, "read");
             a.toast("开始连续朗读");
+        }
+    }
+
+    public void releaseTts() {
+        if (tts != null) {
+            tts.stop();
+            tts.shutdown();
+            tts = null;
         }
     }
 

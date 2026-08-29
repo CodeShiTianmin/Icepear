@@ -3,7 +3,6 @@ package com.icepear.app;
 import android.app.Dialog;
 import android.content.Context;
 import android.graphics.Color;
-import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
 import android.text.InputType;
 import android.view.Gravity;

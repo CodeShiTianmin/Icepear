@@ -6,7 +6,6 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
-import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
 import android.view.Gravity;
@@ -16,8 +15,6 @@ import android.view.Window;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-
-import org.json.JSONException;
 
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
@@ -106,6 +103,17 @@ public class MainActivity extends Activity implements ChatLogic.Host {
         logic.startStatusLoop();
         logic.checkFestival();
         logic.checkAutoNight();
+    }
+
+    @Override
+    protected void onDestroy() {
+        logic.stopActiveLoop();
+        logic.stopStatusLoop();
+        logic.handler().removeCallbacksAndMessages(null);
+        sound.release();
+        Page chat = pages.get("pageChat");
+        if (chat instanceof ChatPage) ((ChatPage) chat).releaseTts();
+        super.onDestroy();
     }
 
     /* ---------- 主题 ---------- */
@@ -331,6 +339,7 @@ public class MainActivity extends Activity implements ChatLogic.Host {
 
     public void resetAllData() {
         try {
+            store.clearAllMedia();
             store.data = new org.json.JSONObject();
             store.ensureDefaults();
             store.save();
