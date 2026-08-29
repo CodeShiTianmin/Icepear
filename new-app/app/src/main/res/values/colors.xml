@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Light theme palette, mirrors app-theme.css tokens -->
+    <color name="paper">#F8F3EF</color>
+    <color name="paper_deep">#EFE7E9</color>
+    <color name="surface">#FFFAF7</color>
+    <color name="surface_strong">#FFFFFF</color>
+    <color name="ink">#2D252A</color>
+    <color name="muted_ink">#6F6167</color>
+    <color name="faint_ink">#8B7C84</color>
+    <color name="plum">#6D3B58</color>
+    <color name="plum_deep">#542C44</color>
+    <color name="coral">#E77D73</color>
+    <color name="line">#E8DCD6</color>
+    <color name="bubble_me">#95EC69</color>
+    <color name="bubble_me_text">#111111</color>
+    <color name="bubble_his">#FFFFFF</color>
+    <color name="bubble_his_text">#111111</color>
+    <color name="danger">#C24545</color>
+    <color name="ok_green">#07C160</color>
+
+    <!-- Dark theme palette -->
+    <color name="dark_paper">#171316</color>
+    <color name="dark_surface">#221C20</color>
+    <color name="dark_surface_strong">#2A2328</color>
+    <color name="dark_ink">#EFE6EA</color>
+    <color name="dark_muted_ink">#B7A8B0</color>
+    <color name="dark_faint_ink">#8E7F88</color>
+    <color name="dark_line">#3A3037</color>
+    <color name="dark_bubble_his">#2E272C</color>
+    <color name="dark_bubble_his_text">#EFE6EA</color>
+</resources>
