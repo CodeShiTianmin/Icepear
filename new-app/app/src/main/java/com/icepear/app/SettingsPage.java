@@ -471,8 +471,8 @@ public class SettingsPage extends Page {
 
     private void pickWallpaper() {
         Dialogs.Field mode = new Dialogs.Field("mode", "壁纸");
-        mode.optionValues = new String[]{"默认", "奶油", "雾紫", "薄荷", "夜空", "@image", "@clear"};
-        mode.optionLabels = new String[]{"默认", "奶油", "雾紫", "薄荷", "夜空", "从相册选择…", "清除自定义图片"};
+        mode.optionValues = new String[]{"默认", "粉色", "蓝色", "绿色", "星空", "@image", "@clear"};
+        mode.optionLabels = new String[]{"默认", "粉色", "蓝色", "绿色", "星空", "从相册选择…", "清除自定义图片"};
         JSONObject wallpaper = a.store.data.optJSONObject("wallpaper");
         mode.value = wallpaper.optString("preset", "默认");
         Dialogs.form(a, a.store, "🖼", "聊天壁纸", null, "应用", Dialogs.fields(mode), values -> {
@@ -486,7 +486,7 @@ public class SettingsPage extends Page {
                             return;
                         }
                         try {
-                            wallpaper.put("image", ref);
+                            wallpaper.put("preset", "图片").put("image", ref);
                             a.store.save();
                             rebuildChat();
                         } catch (JSONException ignored) {
@@ -497,6 +497,7 @@ public class SettingsPage extends Page {
                 if ("@clear".equals(pick)) {
                     a.store.deleteMedia(wallpaper.optString("image", ""));
                     wallpaper.put("image", "");
+                    if ("图片".equals(wallpaper.optString("preset", ""))) wallpaper.put("preset", "默认");
                 } else {
                     wallpaper.put("preset", pick).put("image", "");
                 }
