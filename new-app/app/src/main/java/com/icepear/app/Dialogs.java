@@ -80,9 +80,16 @@ public final class Dialogs {
         card.setBackground(Ui.rounded(Ui.surfaceStrong(c, store), Ui.dp(c, 22)));
 
         LinearLayout head = Ui.row(c);
-        TextView iconView = Ui.boldText(c, icon == null || icon.isEmpty() ? "✦" : icon, 18, Color.WHITE);
-        iconView.setGravity(Gravity.CENTER);
         int iconSize = Ui.dp(c, 40);
+        View iconView;
+        if (SvgIcon.isSvg(icon)) {
+            iconView = SvgIcon.view(c, icon, Color.WHITE, 20);
+            iconView.setPadding(Ui.dp(c, 10), Ui.dp(c, 10), Ui.dp(c, 10), Ui.dp(c, 10));
+        } else {
+            TextView t = Ui.boldText(c, icon == null || icon.isEmpty() ? "✦" : icon, 18, Color.WHITE);
+            t.setGravity(Gravity.CENTER);
+            iconView = t;
+        }
         iconView.setBackground(Ui.rounded(Ui.plum(c, store), Ui.dp(c, 14)));
         head.addView(iconView, new LinearLayout.LayoutParams(iconSize, iconSize));
         LinearLayout titles = Ui.column(c);
@@ -145,6 +152,14 @@ public final class Dialogs {
                 : Ui.roundedStroke(0x00000000, Ui.dp(c, 12), Ui.line(c, store), Ui.dp(c, 1)));
         button.setPadding(Ui.dp(c, 18), Ui.dp(c, 10), Ui.dp(c, 18), Ui.dp(c, 10));
         return button;
+    }
+
+    /** 自定义内容的弹窗（购物车 sheet 等），返回 Dialog 供调用方关闭 */
+    public static Dialog custom(Context c, Store store, String icon, String title, String subtitle, View body,
+                                String cancelText, String confirmText, Runnable onConfirm) {
+        Dialog dialog = baseDialog(c, store, icon, title, subtitle, body, cancelText, confirmText, false, onConfirm);
+        dialog.show();
+        return dialog;
     }
 
     /** appNotice：只有一个“知道了”按钮 */

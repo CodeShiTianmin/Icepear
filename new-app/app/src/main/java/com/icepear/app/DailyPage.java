@@ -1,20 +1,33 @@
 package com.icepear.app;
 
+import android.view.Gravity;
 import android.view.View;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import org.json.JSONArray;
-import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.util.Calendar;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
 
 /**
- * 他的日常：按日期生成他的天气、位置和一天动态（早中晚各一条），
- * 数据来自天气池、位置池和字卡，同一天内容稳定不变。
+ * 他的日常，对应浏览器补丁 renderDaily()：
+ * 今日卡片（头像 + 「XX的日常」+ 日期·emoji + 天气/身体/心情/做了什么/吃了什么/计划 六行），
+ * 下方「历史日常」可折叠列表，每天一张卡片、右上角垃圾桶删除（写回 role.dailyHistory 并刷新）。
+ * 历史只在用户点删除时移除，不会自动清理。
  */
 public class DailyPage extends Page {
+
+    private static final String[][] ROWS = {
+            {"weather", "天气", Icons.WX},
+            {"body", "身体", Icons.BODY},
+            {"mood", "心情", Icons.MOOD},
+            {"did", "做了什么", Icons.DID},
+            {"ate", "吃了什么", Icons.ATE},
+            {"plan", "计划", Icons.PLAN},
+    };
 
     private LinearLayout content;
 
@@ -28,72 +41,139 @@ public class DailyPage extends Page {
         return pageWithBar("他的日常", content);
     }
 
+    private boolean folded() {
+        JSONObject prefs = a.store.data.optJSONObject("icepearUi");
+        return prefs == null || prefs.optBoolean("dailyFold", true);
+    }
+
+    private void setFolded(boolean fold) {
+        try {
+            JSONObject prefs = a.store.data.optJSONObject("icepearUi");
+            if (prefs == null) {
+                prefs = new JSONObject();
+                a.store.data.put("icepearUi", prefs);
+            }
+            prefs.put("dailyFold", fold);
+            a.store.save();
+        } catch (org.json.JSONException ignored) {
+        }
+    }
+
     @Override
     public void refresh() {
         if (content == null) return;
         content.removeAllViews();
-        try {
-            JSONObject daily = ensureToday();
-            LinearLayout headCard = card(null);
-            headCard.setBackground(Ui.gradient(Ui.plum(a, a.store), 0xFF9A6B87, Ui.dp(a, 20)));
-            headCard.addView(Ui.boldText(a, daily.optString("date"), 13, 0xCCFFFFFF));
-            headCard.addView(Ui.boldText(a, daily.optString("weather") + " · " + daily.optString("loc"),
-                    20, 0xFFFFFFFF));
-            headCard.addView(Ui.text(a, "他今天在" + daily.optString("loc") + "，天气" + daily.optString("weather"),
-                    12, 0xCCFFFFFF));
-            content.addView(headCard);
-
-            LinearLayout timeline = card("他的一天");
-            JSONArray events = daily.optJSONArray("events");
-            String[] slots = {"上午", "下午", "晚上"};
-            for (int i = 0; events != null && i < events.length(); i++) {
-                LinearLayout row = Ui.row(a);
-                row.setPadding(0, Ui.dp(a, 8), 0, Ui.dp(a, 8));
-                TextView slot = Ui.boldText(a, i < slots.length ? slots[i] : "深夜", 12, Ui.plum(a, a.store));
-                slot.setWidth(Ui.dp(a, 48));
-                row.addView(slot);
-                row.addView(Ui.text(a, events.optString(i), 13, Ui.ink(a, a.store)), Ui.weighted());
-                timeline.addView(row);
+        a.store.ensureDailyToday();
+        JSONArray history = a.store.dailyHistory();
+        String todayKey = Store.dateKey(java.util.Calendar.getInstance());
+        JSONObject today = null;
+        for (int i = 0; i < history.length(); i++) {
+            JSONObject item = history.optJSONObject(i);
+            if (item != null && todayKey.equals(item.optString("date"))) {
+                today = item;
+                break;
             }
-            content.addView(timeline);
-            content.addView(hint("每天的内容会自动更新"));
-        } catch (JSONException ignored) {
         }
-    }
+        if (today == null) return;
 
-    private JSONObject ensureToday() throws JSONException {
-        Calendar now = Calendar.getInstance();
-        String key = now.get(Calendar.YEAR) + "-" + (now.get(Calendar.MONTH) + 1)
-                + "-" + now.get(Calendar.DAY_OF_MONTH);
-        JSONObject prefs = a.store.data.optJSONObject("icepearUi");
-        if (prefs == null) {
-            prefs = new JSONObject();
-            a.store.data.put("icepearUi", prefs);
+        /* 今日卡片 */
+        LinearLayout rpt = card(null);
+        LinearLayout head = Ui.row(a);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        head.addView(Ui.avatar(a, a.store, "other", 44));
+        LinearLayout titles = Ui.column(a);
+        titles.setPadding(Ui.dp(a, 10), 0, 0, 0);
+        titles.addView(Ui.boldText(a, a.store.displayName() + "的日常", 16, Ui.ink(a, a.store)));
+        titles.addView(Ui.text(a, new SimpleDateFormat("yyyy/M/d", Locale.CHINA).format(new Date())
+                + " · " + today.optString("emoji", "✨"), 12, Ui.mutedInk(a, a.store)));
+        head.addView(titles);
+        rpt.addView(head);
+        for (String[] def : ROWS) {
+            LinearLayout row = Ui.row(a);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(0, Ui.dp(a, 9), 0, Ui.dp(a, 9));
+            row.addView(SvgIcon.view(a, def[2], Ui.plum(a, a.store), 18));
+            TextView label = Ui.text(a, def[1], 13, Ui.mutedInk(a, a.store));
+            label.setPadding(Ui.dp(a, 8), 0, Ui.dp(a, 12), 0);
+            row.addView(label);
+            TextView value = Ui.text(a, today.optString(def[0], "—"), 14, Ui.ink(a, a.store));
+            value.setGravity(Gravity.END);
+            row.addView(value, Ui.weighted());
+            rpt.addView(row);
+            View line = new View(a);
+            line.setBackgroundColor(Ui.line(a, a.store));
+            rpt.addView(line, new LinearLayout.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, 1));
         }
-        JSONObject daily = prefs.optJSONObject("dailyCache");
-        if (daily == null) {
-            daily = new JSONObject();
-            prefs.put("dailyCache", daily);
+        content.addView(rpt);
+
+        /* 历史日常 */
+        int past = 0;
+        for (int i = 0; i < history.length(); i++) {
+            JSONObject item = history.optJSONObject(i);
+            if (item != null && !todayKey.equals(item.optString("date"))) past++;
         }
-        JSONObject today = daily.optJSONObject(key);
-        if (today != null) return today;
-        JSONArray weatherPool = a.store.data.optJSONArray("weatherPool");
-        JSONArray locs = a.store.data.optJSONArray("hisLocs");
-        java.util.List<String> cards = a.store.allCards();
-        today = new JSONObject();
-        today.put("date", key.replace("-", " / "));
-        today.put("weather", weatherPool != null && weatherPool.length() > 0
-                ? weatherPool.optString(a.store.rand(0, weatherPool.length() - 1)) : "晴");
-        today.put("loc", locs != null && locs.length() > 0
-                ? locs.optString(a.store.rand(0, locs.length() - 1)) : "家里");
-        JSONArray events = new JSONArray();
-        String[] fallback = {"想你了", "在忙，也在想你", "等你消息"};
-        for (int i = 0; i < 3; i++) {
-            events.put(cards.isEmpty() ? fallback[i] : cards.get(a.store.rand(0, cards.size() - 1)));
+        if (past == 0) return;
+        boolean fold = folded();
+        LinearLayout section = card(null);
+        LinearLayout foldHead = Ui.row(a);
+        foldHead.setGravity(Gravity.CENTER_VERTICAL);
+        foldHead.addView(Ui.boldText(a, "历史日常", 14, Ui.ink(a, a.store)), Ui.weighted());
+        TextView count = Ui.text(a, past + "天", 12, Ui.mutedInk(a, a.store));
+        count.setPadding(0, 0, Ui.dp(a, 6), 0);
+        foldHead.addView(count);
+        View chevron = SvgIcon.view(a, Icons.CHEVRON, Ui.mutedInk(a, a.store), 18);
+        chevron.setRotation(fold ? 0 : 180);
+        foldHead.addView(chevron);
+        foldHead.setOnClickListener(v -> {
+            setFolded(!fold);
+            refresh();
+        });
+        section.addView(foldHead);
+        if (!fold) {
+            for (int i = history.length() - 1; i >= 0; i--) {
+                JSONObject item = history.optJSONObject(i);
+                if (item == null || todayKey.equals(item.optString("date"))) continue;
+                final String date = item.optString("date");
+                LinearLayout box = Ui.column(a);
+                box.setBackground(Ui.rounded(Ui.surfaceStrong(a, a.store), Ui.dp(a, 14)));
+                box.setPadding(Ui.dp(a, 12), Ui.dp(a, 10), Ui.dp(a, 12), Ui.dp(a, 10));
+                LinearLayout.LayoutParams boxLp = Ui.lp(android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                        android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
+                boxLp.topMargin = Ui.dp(a, 10);
+                box.setLayoutParams(boxLp);
+                LinearLayout dateRow = Ui.row(a);
+                dateRow.setGravity(Gravity.CENTER_VERTICAL);
+                dateRow.addView(Ui.boldText(a, date + "  " + item.optString("emoji", "✨"), 13, Ui.ink(a, a.store)), Ui.weighted());
+                View trash = SvgIcon.view(a, Icons.TRASH, a.getColor(R.color.danger), 18);
+                trash.setPadding(Ui.dp(a, 8), Ui.dp(a, 4), 0, Ui.dp(a, 4));
+                trash.setContentDescription("删除这一天");
+                trash.setOnClickListener(v -> Dialogs.confirm(a, a.store, "🗑", "删除这一天的日常？", "删除后无法恢复",
+                        "删除", true, () -> {
+                            JSONArray list = a.store.dailyHistory();
+                            for (int k = list.length() - 1; k >= 0; k--) {
+                                JSONObject x = list.optJSONObject(k);
+                                if (x != null && date.equals(x.optString("date"))) list.remove(k);
+                            }
+                            a.store.save();
+                            refresh();
+                        }));
+                dateRow.addView(trash);
+                box.addView(dateRow);
+                for (String[] def : ROWS) {
+                    LinearLayout row = Ui.row(a);
+                    row.setGravity(Gravity.CENTER_VERTICAL);
+                    row.setPadding(0, Ui.dp(a, 4), 0, Ui.dp(a, 4));
+                    row.addView(SvgIcon.view(a, def[2], Ui.mutedInk(a, a.store), 14));
+                    TextView label = Ui.text(a, def[1], 12, Ui.mutedInk(a, a.store));
+                    label.setPadding(Ui.dp(a, 6), 0, Ui.dp(a, 10), 0);
+                    label.setMinWidth(Ui.dp(a, 64));
+                    row.addView(label);
+                    row.addView(Ui.text(a, item.optString(def[0], "—"), 13, Ui.ink(a, a.store)), Ui.weighted());
+                    box.addView(row);
+                }
+                section.addView(box);
+            }
         }
-        today.put("events", events);
-        daily.put(key, today);
-        a.store.save();
-        return today;
+        content.addView(section);
     }
 }

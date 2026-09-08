@@ -130,10 +130,7 @@ public final class Store {
                 }
                 data.put("recv", recv);
             }
-            if (!data.has("cardUi")) data.put("cardUi", new JSONObject()
-                    .put("red", new JSONObject().put("t", "恭喜发财").put("icon", "🧧").put("color", 0))
-                    .put("zhuan", new JSONObject().put("t", "转账").put("icon", "💸").put("color", 1))
-                    .put("gift", new JSONObject().put("t", "礼物").put("icon", "🎁").put("color", 2)));
+            ensureCardUi();
             if (!data.has("cardColors")) {
                 JSONArray colors = new JSONArray();
                 colors.put(jsonArray("#fa9d3b", "#f76b1c"));
@@ -146,7 +143,6 @@ public final class Store {
             if (!data.has("weekly")) data.put("weekly", new JSONObject().put("key", "").put("date", "").put("stats", JSONObject.NULL));
             if (!data.has("gameCount")) data.put("gameCount", 0);
             if (!data.has("bill")) data.put("bill", new JSONArray());
-            if (!data.has("moments")) data.put("moments", new JSONArray());
             if (!data.has("emoji")) data.put("emoji", jsonArray(
                     "😊", "😘", "🥰", "😭", "😤", "🤧", "😴", "🥺", "❤️", "💔", "✨", "🌙",
                     "☀️", "🌸", "🍓", "🐰", "(。・ω・。)", "(*´▽`*)", "(๑•̀ㅂ•́)و✧"));
@@ -168,6 +164,194 @@ public final class Store {
             ensureV230Data();
         } catch (JSONException ignored) {
         }
+    }
+
+    /* ---------- 红包/转账/礼物美化：标题池 + 共用图标池 ---------- */
+
+    /**
+     * 默认标题/图标只在第一次初始化时写入（seeded 标记），
+     * 用户删空后不会在重启时自动重新出现。
+     */
+    private void ensureCardUi() throws JSONException {
+        JSONObject cardUi = data.optJSONObject("cardUi");
+        if (cardUi == null) {
+            cardUi = new JSONObject();
+            data.put("cardUi", cardUi);
+        }
+        String[] kinds = {"red", "zhuan", "gift"};
+        int[] colors = {0, 1, 2};
+        for (int i = 0; i < kinds.length; i++) {
+            JSONObject k = cardUi.optJSONObject(kinds[i]);
+            if (k == null) {
+                k = new JSONObject().put("color", colors[i]);
+                cardUi.put(kinds[i], k);
+            }
+            if (!k.has("color")) k.put("color", colors[i]);
+        }
+        if (!cardUi.optBoolean("seeded", false)) {
+            String[][] titles = {Icons.TITLES_RED, Icons.TITLES_ZHUAN, Icons.TITLES_GIFT};
+            for (int i = 0; i < kinds.length; i++) {
+                JSONObject k = cardUi.getJSONObject(kinds[i]);
+                JSONArray pool = k.optJSONArray("titles");
+                if (pool == null) {
+                    pool = new JSONArray();
+                    String legacy = k.optString("t", "").trim();
+                    if (!legacy.isEmpty() && !legacy.contains("<svg")) {
+                        for (String line : legacy.split("\n")) if (!line.trim().isEmpty()) pool.put(line.trim());
+                    }
+                    for (String t : titles[i]) pool.put(t);
+                    k.put("titles", pool);
+                }
+            }
+            if (!cardUi.has("icons")) {
+                JSONArray icons = new JSONArray();
+                for (String s : Icons.TX_CURATED) icons.put(s);
+                cardUi.put("icons", icons);
+            }
+            cardUi.put("seeded", true);
+        }
+        for (String kind : kinds) {
+            JSONObject k = cardUi.getJSONObject(kind);
+            if (!k.has("titles")) k.put("titles", new JSONArray());
+        }
+        if (!cardUi.has("icons")) cardUi.put("icons", new JSONArray());
+    }
+
+    public JSONObject cardUi(String kind) {
+        JSONObject cardUi = data.optJSONObject("cardUi");
+        JSONObject k = cardUi != null ? cardUi.optJSONObject(kind) : null;
+        return k != null ? k : new JSONObject();
+    }
+
+    public JSONArray txTitles(String kind) {
+        JSONArray pool = cardUi(kind).optJSONArray("titles");
+        return pool != null ? pool : new JSONArray();
+    }
+
+    public JSONArray txIcons() {
+        JSONObject cardUi = data.optJSONObject("cardUi");
+        JSONArray icons = cardUi != null ? cardUi.optJSONArray("icons") : null;
+        return icons != null ? icons : new JSONArray();
+    }
+
+    public static String defaultTxTitle(String kind) {
+        return "zhuan".equals(kind) ? "转账" : "gift".equals(kind) ? "礼物" : "红包";
+    }
+
+    public String pickTxTitle(String kind) {
+        JSONArray pool = txTitles(kind);
+        return pool.length() > 0 ? pool.optString(rand(0, pool.length() - 1)) : defaultTxTitle(kind);
+    }
+
+    public String pickTxIcon(String kind) {
+        JSONArray pool = txIcons();
+        if (pool.length() > 0) return pool.optString(rand(0, pool.length() - 1));
+        return "zhuan".equals(kind) ? Icons.TX_CURATED[4] : "gift".equals(kind) ? Icons.TX_CURATED[9] : Icons.TX_CURATED[0];
+    }
+
+    /* ---------- 他的日常：按日历天持久化到角色 dailyHistory ---------- */
+
+    public static String dateKey(java.util.Calendar c) {
+        return c.get(java.util.Calendar.YEAR) + "-" + Ui.pad2(c.get(java.util.Calendar.MONTH) + 1)
+                + "-" + Ui.pad2(c.get(java.util.Calendar.DAY_OF_MONTH));
+    }
+
+    public JSONArray dailyHistory() {
+        JSONObject role = role();
+        if (role == null) return new JSONArray();
+        JSONArray history = role.optJSONArray("dailyHistory");
+        if (history == null) {
+            history = new JSONArray();
+            try {
+                role.put("dailyHistory", history);
+                JSONObject prefs = data.optJSONObject("icepearUi");
+                JSONObject legacy = prefs != null ? prefs.optJSONObject("dailyCache") : null;
+                if (legacy != null) {
+                    List<String> keys = new ArrayList<>();
+                    Iterator<String> it = legacy.keys();
+                    while (it.hasNext()) keys.add(it.next());
+                    java.util.Collections.sort(keys);
+                    for (String key : keys) {
+                        JSONObject old = legacy.optJSONObject(key);
+                        if (old == null) continue;
+                        String[] parts = key.split("-");
+                        String date = parts.length == 3
+                                ? parts[0] + "-" + Ui.pad2(Integer.parseInt(parts[1])) + "-" + Ui.pad2(Integer.parseInt(parts[2]))
+                                : key;
+                        JSONArray events = old.optJSONArray("events");
+                        history.put(new JSONObject().put("date", date).put("emoji", "✨")
+                                .put("weather", old.optString("weather", "—"))
+                                .put("body", "—")
+                                .put("mood", events != null && events.length() > 0 ? events.optString(0) : "—")
+                                .put("did", "在" + old.optString("loc", "家里"))
+                                .put("ate", "—")
+                                .put("plan", events != null && events.length() > 2 ? events.optString(2) : "—"));
+                    }
+                    prefs.remove("dailyCache");
+                }
+            } catch (JSONException | NumberFormatException ignored) {
+            }
+        }
+        return history;
+    }
+
+    /** 保证今天有一条日常；返回是否新增 */
+    public boolean ensureDailyToday() {
+        try {
+            JSONObject role = role();
+            if (role == null) return false;
+            JSONArray history = dailyHistory();
+            String today = dateKey(java.util.Calendar.getInstance());
+            for (int i = 0; i < history.length(); i++) {
+                JSONObject item = history.optJSONObject(i);
+                if (item != null && today.equals(item.optString("date"))) return false;
+            }
+            JSONObject pools = data.optJSONObject("daily");
+            JSONArray emoji = data.optJSONArray("emoji");
+            JSONObject entry = new JSONObject().put("date", today)
+                    .put("emoji", emoji != null && emoji.length() > 0 ? emoji.optString(rand(0, emoji.length() - 1)) : "✨");
+            for (String key : new String[]{"weather", "body", "mood", "did", "ate", "plan"}) {
+                JSONArray pool = pools != null ? pools.optJSONArray(key) : null;
+                entry.put(key, pool != null && pool.length() > 0 ? pool.optString(rand(0, pool.length() - 1)) : "—");
+            }
+            history.put(entry);
+            save();
+            return true;
+        } catch (JSONException ignored) {
+            return false;
+        }
+    }
+
+    /* ---------- 购物车（按角色） ---------- */
+
+    public JSONArray cart() {
+        JSONObject role = role();
+        if (role == null) return new JSONArray();
+        JSONArray cart = role.optJSONArray("cart");
+        if (cart == null) {
+            cart = new JSONArray();
+            try {
+                role.put("cart", cart);
+            } catch (JSONException ignored) {
+            }
+        }
+        return cart;
+    }
+
+    /* ---------- 珍藏时刻 ---------- */
+
+    public JSONArray memories() {
+        JSONObject role = role();
+        if (role == null) return new JSONArray();
+        JSONArray list = role.optJSONArray("memories");
+        if (list == null) {
+            list = new JSONArray();
+            try {
+                role.put("memories", list);
+            } catch (JSONException ignored) {
+            }
+        }
+        return list;
     }
 
     public JSONObject newRole(String name) throws JSONException {

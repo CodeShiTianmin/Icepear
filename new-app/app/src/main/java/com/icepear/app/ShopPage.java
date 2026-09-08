@@ -12,6 +12,9 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * 小卖铺：钱包余额卡片、商品分组（新建/改名/删除）、商品增删与“送给他”、账单。
  */
@@ -51,10 +54,24 @@ public class ShopPage extends Page {
         walletRow.addView(mineCol, Ui.weighted());
         walletRow.addView(hisCol, Ui.weighted());
         walletCard.addView(walletRow);
+        LinearLayout walletTools = Ui.row(a);
+        walletTools.setGravity(Gravity.CENTER_VERTICAL);
+        walletTools.setPadding(0, Ui.dp(a, 10), 0, 0);
         TextView billButton = Ui.boldText(a, "查看账单 ›", 12, Color.WHITE);
-        billButton.setPadding(0, Ui.dp(a, 10), 0, 0);
         billButton.setOnClickListener(v -> showBill());
-        walletCard.addView(billButton);
+        walletTools.addView(billButton, Ui.weighted());
+        LinearLayout cartButton = Ui.row(a);
+        cartButton.setGravity(Gravity.CENTER_VERTICAL);
+        cartButton.setBackground(Ui.rounded(0x33FFFFFF, Ui.dp(a, 12)));
+        cartButton.setPadding(Ui.dp(a, 10), Ui.dp(a, 5), Ui.dp(a, 10), Ui.dp(a, 5));
+        cartButton.addView(SvgIcon.view(a, Icons.CART, Color.WHITE, 16));
+        int cartCount = cartItems().size();
+        TextView cartText = Ui.boldText(a, "购物车" + (cartCount > 0 ? " · " + cartCount : ""), 12, Color.WHITE);
+        cartText.setPadding(Ui.dp(a, 4), 0, 0, 0);
+        cartButton.addView(cartText);
+        cartButton.setOnClickListener(v -> openCartSheet());
+        walletTools.addView(cartButton);
+        walletCard.addView(walletTools);
         content.addView(walletCard);
 
         /* 分组 */
@@ -112,17 +129,32 @@ public class ShopPage extends Page {
             final String productId = product.optString("id");
             LinearLayout row = Ui.row(a);
             row.setPadding(0, Ui.dp(a, 8), 0, Ui.dp(a, 8));
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            String productIcon = product.optString("icon", "");
+            row.addView(SvgIcon.view(a, SvgIcon.isSvg(productIcon) ? productIcon : Icons.GIFT, Ui.plum(a, a.store), 22));
             LinearLayout copy = Ui.column(a);
+            copy.setPadding(Ui.dp(a, 10), 0, Ui.dp(a, 6), 0);
             copy.addView(Ui.boldText(a, product.optString("name"), 14, Ui.ink(a, a.store)));
             copy.addView(Ui.text(a, "¥" + Ui.fmtMoney(product.optDouble("price", 0)), 12, Ui.mutedInk(a, a.store)));
             row.addView(copy, Ui.weighted());
+            boolean inCart = cartIds().contains(productId);
+            View cartAdd = SvgIcon.view(a, Icons.CART, inCart ? Color.WHITE : Ui.plum(a, a.store), 18);
+            cartAdd.setBackground(inCart
+                    ? Ui.rounded(0xFF7FA98C, Ui.dp(a, 10))
+                    : Ui.roundedStroke(0x00000000, Ui.dp(a, 10), Ui.line(a, a.store), Ui.dp(a, 1)));
+            cartAdd.setPadding(Ui.dp(a, 8), Ui.dp(a, 7), Ui.dp(a, 8), Ui.dp(a, 7));
+            cartAdd.setContentDescription("加入购物车");
+            cartAdd.setOnClickListener(v -> addToCart(productId));
+            LinearLayout.LayoutParams cartLp = Ui.lp(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            cartLp.rightMargin = Ui.dp(a, 8);
+            row.addView(cartAdd, cartLp);
             TextView send = Ui.boldText(a, "送给他", 12, Color.WHITE);
             send.setBackground(Ui.rounded(Ui.plum(a, a.store), Ui.dp(a, 10)));
             send.setPadding(Ui.dp(a, 12), Ui.dp(a, 7), Ui.dp(a, 12), Ui.dp(a, 7));
             send.setOnClickListener(v -> sendProduct(productId));
             row.addView(send);
-            TextView del = Ui.boldText(a, "删除", 12, a.getColor(R.color.danger));
-            del.setPadding(Ui.dp(a, 12), 0, 0, 0);
+            View del = SvgIcon.view(a, Icons.TRASH, a.getColor(R.color.danger), 18);
+            del.setPadding(Ui.dp(a, 10), 0, 0, 0);
             del.setOnClickListener(v -> deleteProduct(productId));
             row.addView(del);
             listCard.addView(row);
@@ -358,6 +390,7 @@ public class ShopPage extends Page {
                     .put("gift", product.optString("name")).put("price", price)
                     .put("amount", price).put("read", false)
                     .put("txVersion", 2).put("txStatus", "");
+            a.logic.decorateTx(msg, "gift");
             JSONObject sent = a.logic.addMsg("me", msg);
             a.store.save();
             refresh();
@@ -386,6 +419,125 @@ public class ShopPage extends Page {
                     } catch (JSONException ignored) {
                     }
                 });
+    }
+
+    /* ---------- 购物车（对应浏览器 mp4Ball / openCartSheet / checkoutCart） ---------- */
+
+    private List<String> cartIds() {
+        JSONArray cart = a.store.cart();
+        List<String> ids = new ArrayList<>();
+        for (int i = 0; i < cart.length(); i++) {
+            String id = cart.optString(i, "");
+            if (!id.isEmpty()) ids.add(id);
+        }
+        return ids;
+    }
+
+    private List<JSONObject> cartItems() {
+        List<JSONObject> items = new ArrayList<>();
+        for (String id : cartIds()) {
+            JSONObject product = findProduct(id);
+            if (product != null) items.add(product);
+        }
+        return items;
+    }
+
+    private void saveCart(List<String> ids) {
+        JSONArray cart = a.store.cart();
+        while (cart.length() > 0) cart.remove(cart.length() - 1);
+        for (String id : ids) cart.put(id);
+        a.store.save();
+    }
+
+    private void addToCart(String id) {
+        List<String> ids = cartIds();
+        if (ids.contains(id)) {
+            a.toast("已经在购物车里了");
+            return;
+        }
+        ids.add(id);
+        saveCart(ids);
+        a.toast("已加入购物车");
+        refresh();
+    }
+
+    private android.app.Dialog cartDialog;
+
+    private void openCartSheet() {
+        if (cartDialog != null) cartDialog.dismiss();
+        List<JSONObject> items = cartItems();
+        LinearLayout body = Ui.column(a);
+        double total = 0;
+        if (items.isEmpty()) {
+            body.addView(hint("购物车是空的"));
+        }
+        for (JSONObject product : items) {
+            final String id = product.optString("id");
+            total += product.optDouble("price", 0);
+            LinearLayout row = Ui.row(a);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(0, Ui.dp(a, 6), 0, Ui.dp(a, 6));
+            String productIcon = product.optString("icon", "");
+            row.addView(SvgIcon.view(a, SvgIcon.isSvg(productIcon) ? productIcon : Icons.GIFT, Ui.plum(a, a.store), 18));
+            TextView name = Ui.boldText(a, product.optString("name"), 14, Ui.ink(a, a.store));
+            name.setPadding(Ui.dp(a, 8), 0, Ui.dp(a, 8), 0);
+            row.addView(name, Ui.weighted());
+            row.addView(Ui.text(a, "¥" + Ui.fmtMoney(product.optDouble("price", 0)), 12, Ui.mutedInk(a, a.store)));
+            View remove = SvgIcon.view(a, Icons.CLOSE, Ui.mutedInk(a, a.store), 16);
+            remove.setPadding(Ui.dp(a, 10), 0, 0, 0);
+            remove.setOnClickListener(v -> {
+                List<String> ids = cartIds();
+                ids.remove(id);
+                saveCart(ids);
+                refresh();
+                openCartSheet();
+            });
+            row.addView(remove);
+            body.addView(row);
+        }
+        if (!items.isEmpty()) {
+            LinearLayout totalRow = Ui.row(a);
+            totalRow.setPadding(0, Ui.dp(a, 10), 0, 0);
+            totalRow.addView(Ui.text(a, "合计", 13, Ui.mutedInk(a, a.store)), Ui.weighted());
+            totalRow.addView(Ui.boldText(a, "¥" + Ui.fmtMoney(total), 16, Ui.plum(a, a.store)));
+            body.addView(totalRow);
+        }
+        cartDialog = Dialogs.custom(a, a.store, "🛒", "购物车", null, body, "关闭",
+                items.isEmpty() ? null : "打包送出", this::checkoutCart);
+    }
+
+    private void checkoutCart() {
+        List<JSONObject> items = cartItems();
+        if (items.isEmpty()) return;
+        try {
+            JSONObject role = a.store.role();
+            JSONObject wallet = role.getJSONObject("wallet");
+            double total = 0;
+            JSONArray snapshot = new JSONArray();
+            for (JSONObject product : items) {
+                double price = product.optDouble("price", 0);
+                total += price;
+                snapshot.put(new JSONObject().put("name", product.optString("name")).put("price", price));
+            }
+            if (total > wallet.optDouble("mine", 0)) {
+                Dialogs.notice(a, a.store, "¥", "余额不足",
+                        "还需要 ¥" + Ui.fmtMoney(total - wallet.optDouble("mine", 0)) + "，点上方「我的余额」卡片补充吧。");
+                return;
+            }
+            wallet.put("mine", wallet.optDouble("mine", 0) - total);
+            String giftName = items.size() == 1 ? items.get(0).optString("name") : "礼物×" + items.size();
+            JSONObject msg = new JSONObject().put("type", "gift")
+                    .put("gift", giftName).put("items", snapshot).put("price", total)
+                    .put("amount", total).put("read", false)
+                    .put("txVersion", 2).put("txStatus", "");
+            a.logic.decorateTx(msg, "gift");
+            JSONObject sent = a.logic.addMsg("me", msg);
+            saveCart(new ArrayList<>());
+            refresh();
+            a.toast("礼物已送出");
+            a.logic.scheduleHisDecision(sent);
+        } catch (JSONException ignored) {
+        }
     }
 
     /* ---------- 账单 ---------- */

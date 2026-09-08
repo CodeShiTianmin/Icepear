@@ -7,6 +7,7 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.List;
 
@@ -111,6 +112,15 @@ public final class ChatLogic {
 
     /* ---------- 自动回复 ---------- */
 
+    /** 红包/转账/礼物发出时从标题池与图标池中抽取一次，固定在消息上（对应浏览器版 pickTitle/pickSvg） */
+    public void decorateTx(JSONObject msg, String type) {
+        try {
+            if (!msg.has("title")) msg.put("title", store.pickTxTitle(type));
+            if (!msg.has("icon")) msg.put("icon", store.pickTxIcon(type));
+        } catch (JSONException ignored) {
+        }
+    }
+
     public void scheduleReply() {
         if (replyRunnable != null) handler.removeCallbacks(replyRunnable);
         JSONObject reply = optReply();
@@ -142,11 +152,9 @@ public final class ChatLogic {
                         + new String[]{"一直在心里", "记得呢", "陪你一起"}[store.rand(0, 2)]);
                 return;
             }
-            List<String> pool = store.allCards();
+            List<String> pool = composeReplies(store.rand(reply.optInt("replyMin", 1), reply.optInt("replyMax", 3)));
             if (pool.isEmpty()) return;
-            java.util.Collections.shuffle(pool);
-            int count = Math.min(pool.size(),
-                    store.rand(reply.optInt("replyMin", 1), reply.optInt("replyMax", 3)));
+            int count = pool.size();
             int gap = reply.optInt("gap", 3) * 1000;
             String quoted = lastReadMeText();
             for (int i = 0; i < count; i++) {
@@ -165,6 +173,55 @@ public final class ChatLogic {
             }
         };
         handler.postDelayed(replyRunnable, wait);
+    }
+
+    /** 等价于浏览器 role.videoLog.push({t, duration})，供周报统计 */
+    public void logVideo(int duration) {
+        try {
+            JSONObject role = store.role();
+            if (role == null) return;
+            JSONArray log = role.optJSONArray("videoLog");
+            if (log == null) {
+                log = new JSONArray();
+                role.put("videoLog", log);
+            }
+            log.put(new JSONObject().put("t", System.currentTimeMillis()).put("duration", duration));
+            store.save();
+        } catch (JSONException ignored) {
+        }
+    }
+
+    /**
+     * 组合回复：每条可以是单个字卡、单个 emoji，或“一个字卡 + 一个 emoji”（前后顺序随机）。
+     * 表情包（图片）不参与组合，单独由 heSendRandom 发送。
+     */
+    public List<String> composeReplies(int count) {
+        List<String> cards = store.allCards();
+        List<String> emojis = new ArrayList<>();
+        JSONArray emojiPool = store.data.optJSONArray("emoji");
+        for (int i = 0; emojiPool != null && i < emojiPool.length(); i++) {
+            String e = emojiPool.optString(i, "").trim();
+            if (!e.isEmpty()) emojis.add(e);
+        }
+        List<String> out = new ArrayList<>();
+        if (cards.isEmpty() && emojis.isEmpty()) return out;
+        java.util.Collections.shuffle(cards);
+        int ci = 0;
+        for (int i = 0; i < Math.max(1, count); i++) {
+            String card = ci < cards.size() ? cards.get(ci++) : null;
+            String emoji = emojis.isEmpty() ? null : emojis.get(store.rand(0, emojis.size() - 1));
+            if (card != null && emoji != null) {
+                int mode = store.rand(0, 9);
+                if (mode < 5) out.add(card);
+                else if (mode < 6) out.add(emoji);
+                else out.add(store.rand(0, 1) == 0 ? card + " " + emoji : emoji + " " + card);
+            } else if (card != null) {
+                out.add(card);
+            } else {
+                out.add(emoji);
+            }
+        }
+        return out;
     }
 
     /** 最后一条已读的我方文字消息，等价于旧版 v2LastReadMessage() */
@@ -304,6 +361,7 @@ public final class ChatLogic {
             double amount;
             JSONObject msg = new JSONObject().put("type", type).put("read", true)
                     .put("txVersion", 2).put("txStatus", "");
+            decorateTx(msg, type);
             if ("gift".equals(type)) {
                 JSONArray shop = role.optJSONArray("shop");
                 JSONObject pick = null;
@@ -337,8 +395,8 @@ public final class ChatLogic {
     }
 
     private void cardFallback() {
-        List<String> pool = store.allCards();
-        if (!pool.isEmpty()) addText("other", pool.get(store.rand(0, pool.size() - 1)));
+        List<String> pool = composeReplies(1);
+        if (!pool.isEmpty()) addText("other", pool.get(0));
     }
 
     /* ---------- 生物钟状态轮换 ---------- */

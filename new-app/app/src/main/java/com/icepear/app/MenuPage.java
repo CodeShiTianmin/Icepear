@@ -7,9 +7,24 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 /**
- * 功能中心：朋友圈、他的日常、互动周报、搜索聊天、词云、视频通话等入口。
+ * 功能中心，对应浏览器版 #pageMenu：两列 group-tab 按钮（SVG 图标 + 文字，左对齐），
+ * 顺序与浏览器一致：搜索聊天 / 小卖铺 / 字卡设置 / 信箱 / 设置 / 朋友圈 / 他的日常 / 词云 / 珍藏时刻 / 互动周报 / 视频通话。
  */
 public class MenuPage extends Page {
+
+    private static final String[][] ITEMS = {
+            {Icons.SEARCH, "搜索聊天", "pageSearch"},
+            {Icons.SHOP, "小卖铺", "pageShop"},
+            {Icons.CARDS, "字卡设置", "pageCards"},
+            {Icons.MAIL, "信箱", "pageLetter"},
+            {Icons.SLIDERS, "设置", "pageSet"},
+            {Icons.NAV_MOMENTS, "朋友圈", "pageMoments"},
+            {Icons.SUN_CLOUD, "他的日常", "pageWeather"},
+            {Icons.WORD_CLOUD, "词云", "pageCloud"},
+            {Icons.HEART, "珍藏时刻", "pageFav"},
+            {Icons.WEEKLY, "互动周报", "pageWeekly"},
+            {Icons.VIDEO, "视频通话", "@video"},
+    };
 
     public MenuPage(MainActivity activity) {
         super(activity);
@@ -18,40 +33,30 @@ public class MenuPage extends Page {
     @Override
     protected View create() {
         LinearLayout content = Ui.column(a);
+        content.setPadding(Ui.dp(a, 4), Ui.dp(a, 4), Ui.dp(a, 4), Ui.dp(a, 4));
         GridLayout grid = new GridLayout(a);
-        grid.setColumnCount(3);
-        String[][] items = {
-                {"🌸", "朋友圈", "pageMoments"},
-                {"📔", "他的日常", "pageWeather"},
-                {"📊", "互动周报", "pageWeekly"},
-                {"🔍", "搜索聊天", "pageSearch"},
-                {"☁️", "词云", "pageCloud"},
-                {"⭐", "收藏", "pageFav"},
-                {"📹", "视频通话", "@video"},
-                {"📞", "他来电", "@call"},
-        };
-        for (String[] item : items) {
+        grid.setColumnCount(2);
+        for (String[] item : ITEMS) {
             final String target = item[2];
-            LinearLayout cell = Ui.column(a);
-            cell.setGravity(Gravity.CENTER);
-            cell.setBackground(Ui.rounded(Ui.surface(a, a.store), Ui.dp(a, 18)));
-            cell.setPadding(0, Ui.dp(a, 18), 0, Ui.dp(a, 14));
-            TextView icon = Ui.text(a, item[0], 28, Ui.ink(a, a.store));
-            icon.setGravity(Gravity.CENTER);
-            TextView name = Ui.text(a, item[1], 12, Ui.mutedInk(a, a.store));
-            name.setGravity(Gravity.CENTER);
-            name.setPadding(0, Ui.dp(a, 6), 0, 0);
-            cell.addView(icon);
-            cell.addView(name);
+            LinearLayout cell = Ui.row(a);
+            cell.setGravity(Gravity.CENTER_VERTICAL);
+            cell.setBackground(Ui.rounded(Ui.surface(a, a.store), Ui.dp(a, 14)));
+            cell.setPadding(Ui.dp(a, 16), Ui.dp(a, 16), Ui.dp(a, 14), Ui.dp(a, 16));
+            cell.addView(SvgIcon.view(a, item[0], Ui.plum(a, a.store), 22));
+            TextView name = Ui.boldText(a, item[1], 15, Ui.ink(a, a.store));
+            name.setSingleLine(true);
+            name.setPadding(Ui.dp(a, 10), 0, 0, 0);
+            cell.addView(name, Ui.weighted());
             GridLayout.LayoutParams lp = new GridLayout.LayoutParams(
                     GridLayout.spec(GridLayout.UNDEFINED, 1f), GridLayout.spec(GridLayout.UNDEFINED, 1f));
             lp.width = 0;
             lp.setMargins(Ui.dp(a, 5), Ui.dp(a, 5), Ui.dp(a, 5), Ui.dp(a, 5));
             cell.setLayoutParams(lp);
             cell.setOnClickListener(v -> {
-                if ("@video".equals(target)) a.videoOverlay.startVideo();
-                else if ("@call".equals(target)) a.videoOverlay.incomingCall();
-                else a.goPage(target, true);
+                if ("@video".equals(target)) {
+                    a.goPage("pageChat", false);
+                    a.videoOverlay.startVideo();
+                } else a.goPage(target, true);
             });
             grid.addView(cell);
         }
