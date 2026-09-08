@@ -467,15 +467,20 @@ public class ChatPage extends Page {
         card.addView(iconBox, new LinearLayout.LayoutParams(Ui.dp(a, 42), Ui.dp(a, 42)));
         LinearLayout copy = Ui.column(a);
         copy.setPadding(Ui.dp(a, 10), 0, 0, 0);
-        String title;
-        if ("gift".equals(type) && !msg.optString("gift", "").isEmpty()) title = msg.optString("gift");
-        else if (!msg.optString("note", "").isEmpty()) title = msg.optString("note");
-        else if (!msg.optString("title", "").isEmpty()) title = msg.optString("title");
-        else title = Store.defaultTxTitle(type);
+        String title = msg.optString("title", "").trim();
+        if (title.isEmpty()) title = "gift".equals(type) && !msg.optString("gift", "").isEmpty()
+                ? msg.optString("gift") : Store.defaultTxTitle(type);
         copy.addView(Ui.boldText(a, title, 14, Color.WHITE));
         double amount = ChatLogic.txAmount(msg);
-        String sub = "¥" + Ui.fmtMoney(amount) + " · " + txStatusLabel(msg);
-        copy.addView(Ui.text(a, sub, 11, 0xDDFFFFFF));
+        String detail = "gift".equals(type) && !msg.optString("gift", "").isEmpty()
+                ? msg.optString("gift") : msg.optString("note", "").trim();
+        String sub = "¥" + Ui.fmtMoney(amount) + " · " + txStatusLabel(msg)
+                + (detail.isEmpty() ? "" : " · " + detail);
+        TextView subView = Ui.text(a, sub, 11, 0xDDFFFFFF);
+        subView.setSingleLine(true);
+        subView.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        subView.setMaxWidth(Ui.dp(a, 190));
+        copy.addView(subView);
         card.addView(copy);
         card.setOnClickListener(v -> openTxPop(msg, index));
         return card;
@@ -941,42 +946,85 @@ public class ChatPage extends Page {
         });
     }
 
+    /** 发红包/转账：金额 + 祝福语 + 标题（默认从标题池抽一条，可改）+ 图标换一个，对应浏览器版 showCard */
     private void sendTxDialog(String type, String title) {
-        List<Dialogs.Field> fields = new ArrayList<>();
-        Dialogs.Field amount = new Dialogs.Field("amount", "金额");
-        amount.number = true;
-        amount.placeholder = "0.00";
-        fields.add(amount);
-        Dialogs.Field note = new Dialogs.Field("note", "留言（可选）");
-        note.placeholder = "red".equals(type) ? "恭喜发财" : "转账给你";
-        fields.add(note);
-        Dialogs.form(a, a.store, "red".equals(type) ? "🧧" : "💸", title, null, "发送", fields, values -> {
+        boolean isRed = "red".equals(type);
+        LinearLayout body = Ui.column(a);
+        EditText amountInput = Dialogs.makeInput(a, a.store, false);
+        amountInput.setHint("金额(元)");
+        amountInput.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        body.addView(amountInput);
+
+        JSONArray bless = a.store.data.optJSONArray("bless");
+        EditText noteInput = Dialogs.makeInput(a, a.store, false);
+        noteInput.setHint((isRed ? "祝福语" : "转账语") + "(可不填)");
+        if (bless != null && bless.length() > 0) noteInput.setText(bless.optString(a.store.rand(0, bless.length() - 1)));
+        LinearLayout.LayoutParams gap = Ui.lp(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        gap.topMargin = Ui.dp(a, 8);
+        body.addView(noteInput, gap);
+
+        EditText titleInput = Dialogs.makeInput(a, a.store, false);
+        titleInput.setHint((isRed ? "红包标题" : "转账标题") + "(可不填)");
+        titleInput.setText(a.store.pickTxTitle(type));
+        LinearLayout.LayoutParams gap2 = Ui.lp(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        gap2.topMargin = Ui.dp(a, 8);
+        body.addView(titleInput, gap2);
+
+        final String[] icon = {a.store.pickTxIcon(type)};
+        LinearLayout iconRow = Ui.row(a);
+        iconRow.setGravity(Gravity.CENTER_VERTICAL);
+        FrameLayout iconBox = new FrameLayout(a);
+        iconBox.setBackground(Ui.rounded(Ui.plum(a, a.store), Ui.dp(a, 12)));
+        ImageView iconView = SvgIcon.view(a, icon[0], Color.WHITE, 22);
+        iconBox.addView(iconView, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER));
+        iconRow.addView(iconBox, new LinearLayout.LayoutParams(Ui.dp(a, 42), Ui.dp(a, 42)));
+        LinearLayout reroll = Ui.row(a);
+        reroll.setGravity(Gravity.CENTER_VERTICAL);
+        reroll.setBackground(Ui.rounded(Ui.surfaceStrong(a, a.store), Ui.dp(a, 12)));
+        reroll.setPadding(Ui.dp(a, 12), Ui.dp(a, 8), Ui.dp(a, 12), Ui.dp(a, 8));
+        reroll.addView(SvgIcon.view(a, Icons.DICE, Ui.ink(a, a.store), 16));
+        TextView rerollText = Ui.boldText(a, "换一个", 13, Ui.ink(a, a.store));
+        rerollText.setPadding(Ui.dp(a, 6), 0, 0, 0);
+        reroll.addView(rerollText);
+        reroll.setOnClickListener(v -> {
+            String next = a.store.pickTxIcon(type);
+            for (int i = 0; i < 4 && next.equals(icon[0]); i++) next = a.store.pickTxIcon(type);
+            icon[0] = next;
+            iconView.setImageDrawable(SvgIcon.of(a, next, Color.WHITE, 22));
+        });
+        LinearLayout.LayoutParams rlp = Ui.lp(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        rlp.leftMargin = Ui.dp(a, 10);
+        iconRow.addView(reroll, rlp);
+        LinearLayout.LayoutParams gap3 = Ui.lp(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        gap3.topMargin = Ui.dp(a, 10);
+        body.addView(iconRow, gap3);
+
+        Dialogs.custom(a, a.store, isRed ? Icons.RED : Icons.ZHUAN, title, "对方可见金额", body, "取消", "发送", () -> {
             double value;
             try {
-                value = Double.parseDouble(values.get("amount"));
+                value = Double.parseDouble(amountInput.getText().toString().trim());
             } catch (Exception e) {
-                a.toast("金额无效");
+                a.toast("金额无效，请输入正确金额");
                 return;
             }
             if (value <= 0) {
-                a.toast("金额无效");
+                a.toast("金额无效，请输入正确金额");
                 return;
             }
-            try {
-                JSONObject role = a.store.role();
-                JSONObject wallet = role.getJSONObject("wallet");
-                double mine = wallet.optDouble("mine", 0);
-                if (value > mine) {
-                    a.toast("余额不足");
-                    return;
-                }
-                commitTx(type, value, values.get("note"));
-            } catch (JSONException ignored) {
+            JSONObject role = a.store.role();
+            JSONObject wallet = role != null ? role.optJSONObject("wallet") : null;
+            if (wallet == null || value > wallet.optDouble("mine", 0)) {
+                a.toast("余额不足");
+                return;
             }
+            String customTitle = titleInput.getText().toString().trim();
+            commitTx(type, value, noteInput.getText().toString(),
+                    customTitle.isEmpty() ? a.store.pickTxTitle(type) : customTitle, icon[0]);
         });
     }
 
-    private void commitTx(String type, double amount, String note) {
+    private void commitTx(String type, double amount, String note, String title, String icon) {
         try {
             JSONObject role = a.store.role();
             JSONObject wallet = role.getJSONObject("wallet");
@@ -984,6 +1032,8 @@ public class ChatPage extends Page {
             JSONObject msg = new JSONObject().put("type", type).put("amount", amount)
                     .put("txVersion", 2).put("txStatus", "");
             if (note != null && !note.trim().isEmpty()) msg.put("note", note.trim());
+            if (title != null && !title.isEmpty()) msg.put("title", title);
+            if (SvgIcon.isSvg(icon)) msg.put("icon", icon);
             a.logic.decorateTx(msg, type);
             JSONObject sent = a.logic.addMsg("me", msg);
             a.store.save();

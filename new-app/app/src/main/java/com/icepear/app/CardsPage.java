@@ -427,6 +427,7 @@ public class CardsPage extends Page {
         TextView add = Ui.boldText(a, "＋ 添加", 12, Ui.plum(a, a.store));
         add.setPadding(0, Ui.dp(a, 8), 0, 0);
         add.setOnClickListener(v -> Dialogs.prompt(a, a.store, "＋", "添加", "内容", placeholder, "", value -> {
+            if (pool == null) return;
             pool.put(value);
             a.store.save();
             refresh();

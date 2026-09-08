@@ -28,6 +28,7 @@ public class VideoOverlay {
     private Runnable tick;
     private int seconds;
     private boolean inCall;
+    private int callSeq;
 
     public VideoOverlay(MainActivity activity) {
         this.a = activity;
@@ -56,14 +57,17 @@ public class VideoOverlay {
 
     public void startVideo() {
         showCallScreen("正在等待他接听…", true);
+        final int seq = ++callSeq;
         int wait = a.store.rand(2, 6) * 1000;
         handler.postDelayed(() -> {
-            if (fullScreen == null) return;
+            if (fullScreen == null || seq != callSeq || inCall) return;
             if (a.store.rand(0, 99) < 78) {
                 connect();
             } else {
                 setStatus("他现在不方便接听");
-                handler.postDelayed(() -> endCall(false), 1600);
+                handler.postDelayed(() -> {
+                    if (seq == callSeq && fullScreen != null) endCall(false);
+                }, 1600);
             }
         }, wait);
     }
@@ -190,6 +194,7 @@ public class VideoOverlay {
         boolean was = inCall;
         int duration = seconds;
         inCall = false;
+        callSeq++;
         if (tick != null) handler.removeCallbacks(tick);
         tick = null;
         removeAll();
