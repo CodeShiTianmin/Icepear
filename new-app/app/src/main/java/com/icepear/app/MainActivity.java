@@ -6,17 +6,22 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.Color;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
+import android.view.WindowInsets;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
@@ -49,6 +54,9 @@ public class MainActivity extends Activity implements ChatLogic.Host {
 
     public VideoOverlay videoOverlay;
 
+    /** 当前系统栏/键盘安全区（px），供页面在需要时读取 */
+    public int insetTop, insetBottom, imeBottom;
+
     public interface FilePicked {
         void run(byte[] bytes, String mime, String name);
     }
@@ -75,9 +83,10 @@ public class MainActivity extends Activity implements ChatLogic.Host {
         shell.addView(pageHost, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         shell.addView(bottomNav, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 56)));
+                ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 58)));
         root.addView(shell, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        setupEdgeToEdge();
 
         pages.put("pageChat", new ChatPage(this));
         pages.put("pageShop", new ShopPage(this));
@@ -100,6 +109,7 @@ public class MainActivity extends Activity implements ChatLogic.Host {
         buildBottomNav();
         applyTheme();
         goPage("pageChat", false);
+        store.ensureDailyToday();
         showBootScreen();
 
         logic.scheduleStoredReminders();
@@ -120,15 +130,93 @@ public class MainActivity extends Activity implements ChatLogic.Host {
         super.onDestroy();
     }
 
+    /* ---------- 边到边安全区：状态栏 / 导航栏 / 键盘 ---------- */
+
+    private void setupEdgeToEdge() {
+        Window window = getWindow();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.setDecorFitsSystemWindows(false);
+        } else {
+            View decor = window.getDecorView();
+            decor.setSystemUiVisibility(decor.getSystemUiVisibility()
+                    | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
+        }
+        window.setStatusBarColor(Color.TRANSPARENT);
+        window.setNavigationBarColor(Color.TRANSPARENT);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.setNavigationBarContrastEnforced(false);
+        }
+        root.setOnApplyWindowInsetsListener((v, insets) -> {
+            int top, bottom, ime;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                android.graphics.Insets bars = insets.getInsets(WindowInsets.Type.systemBars()
+                        | WindowInsets.Type.displayCutout());
+                android.graphics.Insets keyboard = insets.getInsets(WindowInsets.Type.ime());
+                top = bars.top;
+                bottom = bars.bottom;
+                ime = Math.max(0, keyboard.bottom - bars.bottom);
+            } else {
+                top = insets.getSystemWindowInsetTop();
+                int stable = insets.getStableInsetBottom();
+                int full = insets.getSystemWindowInsetBottom();
+                bottom = Math.min(stable, full);
+                ime = Math.max(0, full - bottom);
+            }
+            applyInsets(top, bottom, ime);
+            return insets;
+        });
+        root.requestApplyInsets();
+    }
+
+    private void applyInsets(int top, int bottom, int ime) {
+        boolean changed = top != insetTop || bottom != insetBottom || ime != imeBottom;
+        insetTop = top;
+        insetBottom = bottom;
+        imeBottom = ime;
+        boolean keyboardOpen = ime > 0;
+        shell.setPadding(0, top, 0, keyboardOpen ? bottom + ime : bottom);
+        boolean mainTab = isMainTab(currentPage);
+        bottomNav.setVisibility(mainTab && !keyboardOpen ? View.VISIBLE : View.GONE);
+        if (changed) {
+            Page page = pages.get(currentPage);
+            if (page instanceof ChatPage) ((ChatPage) page).onKeyboard(keyboardOpen);
+        }
+    }
+
+    public void hideKeyboard() {
+        View focus = getCurrentFocus();
+        InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (imm != null) {
+            imm.hideSoftInputFromWindow((focus != null ? focus : root).getWindowToken(), 0);
+        }
+        if (focus != null) focus.clearFocus();
+    }
+
+    public void showKeyboard(View target) {
+        target.requestFocus();
+        InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (imm != null) imm.showSoftInput(target, InputMethodManager.SHOW_IMPLICIT);
+    }
+
     /* ---------- 主题 ---------- */
+
+    public void toggleDark() {
+        try {
+            store.data.put("dark", !Ui.dark(store));
+            store.save();
+        } catch (JSONException ignored) {
+        }
+        applyTheme();
+    }
 
     public void applyTheme() {
         boolean dark = Ui.dark(store);
         root.setBackgroundColor(Ui.paper(this, store));
+        shell.setBackgroundColor(Ui.paper(this, store));
         bottomNav.setBackgroundColor(Ui.navBg(this, store));
         Window window = getWindow();
-        window.setStatusBarColor(Ui.topBg(this, store));
-        window.setNavigationBarColor(Ui.navBg(this, store));
         View decor = window.getDecorView();
         int flags = decor.getSystemUiVisibility();
         if (dark) {
@@ -139,44 +227,55 @@ public class MainActivity extends Activity implements ChatLogic.Host {
             flags |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
         }
         decor.setSystemUiVisibility(flags);
-        buildBottomNav();
-        Page page = pages.get(currentPage);
-        if (page != null) page.rebuild();
+        for (Page page : pages.values()) page.rebuild();
+        if (pageHost.getChildCount() > 0) goPage(currentPage, false);
+        else buildBottomNav();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (store.ensureDailyToday()) {
+            Page daily = pages.get("pageWeather");
+            if (daily != null && "pageWeather".equals(currentPage)) daily.refresh();
+        }
     }
 
     /* ---------- 底部导航（图标式，对应补丁18） ---------- */
 
-    private static final Object[][] NAV = {
-            {"pageChat", R.drawable.nav_chat, "聊天"},
-            {"pageMoments", R.drawable.nav_moments, "动态"},
-            {"pageMenu", R.drawable.nav_menu, "发现"},
-            {"pageLetter", R.drawable.nav_letter, "信箱"},
-            {"pageSet", R.drawable.nav_set, "我的"},
+    private static final String[][] NAV = {
+            {"pageChat", Icons.NAV_CHAT, "聊天"},
+            {"pageMoments", Icons.NAV_MOMENTS, "动态"},
+            {"pageMenu", Icons.NAV_MENU, "发现"},
+            {"pageLetter", Icons.NAV_LETTER, "信箱"},
+            {"pageSet", Icons.NAV_SET, "我的"},
     };
+
+    private boolean isMainTab(String id) {
+        for (String[] item : NAV) if (item[0].equals(id)) return true;
+        return false;
+    }
 
     private void buildBottomNav() {
         bottomNav.removeAllViews();
         bottomNav.setBackgroundColor(Ui.navBg(this, store));
-        for (Object[] item : NAV) {
-            final String id = (String) item[0];
+        View line = new View(this);
+        line.setBackgroundColor(Ui.line(this, store));
+        for (String[] item : NAV) {
+            final String id = item[0];
             boolean active = id.equals(currentPage);
+            int color = active ? Ui.plum(this, store) : Ui.faintInk(this, store);
             LinearLayout button = new LinearLayout(this);
             button.setOrientation(LinearLayout.VERTICAL);
             button.setGravity(Gravity.CENTER);
-            button.setContentDescription((String) item[2]);
-            ImageView icon = new ImageView(this);
-            icon.setImageResource((Integer) item[1]);
-            icon.setColorFilter(active ? Ui.plum(this, store) : Ui.faintInk(this, store));
-            int size = Ui.dp(this, 26);
-            LinearLayout.LayoutParams ip = new LinearLayout.LayoutParams(size, size);
-            if (active) ip.bottomMargin = Ui.dp(this, 2);
-            button.addView(icon, ip);
-            View dot = new View(this);
-            dot.setBackground(Ui.rounded(Ui.plum(this, store), Ui.dp(this, 3)));
-            dot.setVisibility(active ? View.VISIBLE : View.INVISIBLE);
-            LinearLayout.LayoutParams dp = new LinearLayout.LayoutParams(Ui.dp(this, 5), Ui.dp(this, 5));
-            dp.topMargin = Ui.dp(this, 3);
-            button.addView(dot, dp);
+            button.setContentDescription(item[2]);
+            ImageView icon = SvgIcon.view(this, item[1], color, 24);
+            button.addView(icon);
+            TextView label = Ui.text(this, item[2], 11, color);
+            label.setGravity(Gravity.CENTER);
+            label.setPadding(0, Ui.dp(this, 3), 0, 0);
+            if (active) label.setTypeface(label.getTypeface(), android.graphics.Typeface.BOLD);
+            button.addView(label);
             button.setOnClickListener(v -> goPage(id, true));
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
             bottomNav.addView(button, lp);
@@ -194,10 +293,9 @@ public class MainActivity extends Activity implements ChatLogic.Host {
         pageHost.addView(page.view(), new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         page.refresh();
-        boolean mainTab = false;
-        for (Object[] item : NAV) if (item[0].equals(id)) mainTab = true;
-        bottomNav.setVisibility(mainTab ? View.VISIBLE : View.GONE);
+        bottomNav.setVisibility(isMainTab(id) && imeBottom == 0 ? View.VISIBLE : View.GONE);
         buildBottomNav();
+        if (!"pageChat".equals(id)) hideKeyboard();
     }
 
     public Page page(String id) {
@@ -273,8 +371,24 @@ public class MainActivity extends Activity implements ChatLogic.Host {
         boot.addView(center, centerLp);
         root.addView(boot, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        boot.postDelayed(() -> boot.animate().alpha(0f).setDuration(450)
-                .withEndAction(() -> root.removeView(boot)).start(), 1700);
+        center.setAlpha(0f);
+        center.setTranslationY(Ui.dp(this, 16));
+        center.animate().alpha(1f).translationY(0f).setDuration(520).start();
+        final Runnable dismiss = () -> boot.animate().alpha(0f).setDuration(480)
+                .withEndAction(() -> root.removeView(boot)).start();
+        boot.getViewTreeObserver().addOnPreDrawListener(new android.view.ViewTreeObserver.OnPreDrawListener() {
+            boolean armed;
+
+            @Override
+            public boolean onPreDraw() {
+                if (!armed) {
+                    armed = true;
+                    boot.postDelayed(dismiss, 2400);
+                }
+                boot.getViewTreeObserver().removeOnPreDrawListener(this);
+                return true;
+            }
+        });
     }
 
     /** 四种开屏动画：爱心飘动 / 气泡上升 / 星星闪烁 / 头像碰碰 */
@@ -393,6 +507,23 @@ public class MainActivity extends Activity implements ChatLogic.Host {
         intent.setType("text/plain");
         intent.putExtra(Intent.EXTRA_TEXT, text);
         startActivity(Intent.createChooser(intent, "分享"));
+    }
+
+    /** 相册选图：优先系统照片选择器（Android 13+），否则回退到相册 ACTION_PICK */
+    public void pickImage(FilePicked callback) {
+        pendingPick = callback;
+        Intent intent;
+        if (Build.VERSION.SDK_INT >= 33) {
+            intent = new Intent(android.provider.MediaStore.ACTION_PICK_IMAGES);
+        } else {
+            intent = new Intent(Intent.ACTION_PICK, android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
+        }
+        try {
+            startActivityForResult(intent, REQ_PICK_FILE);
+        } catch (Exception e) {
+            pendingPick = null;
+            pickFile("image/*", callback);
+        }
     }
 
     public void pickFile(String mimeType, FilePicked callback) {

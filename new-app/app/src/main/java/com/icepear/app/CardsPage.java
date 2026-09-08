@@ -4,6 +4,7 @@ import android.graphics.Color;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.FrameLayout;
 import android.widget.GridLayout;
 import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
@@ -307,6 +308,104 @@ public class CardsPage extends Page {
         content.addView(stringPoolCard("他的状态池", role.optJSONArray("statuses"), "例如：想你"));
         content.addView(stringPoolCard("他的位置池", a.store.data.optJSONArray("hisLocs"), "例如：家里"));
         content.addView(stringPoolCard("收到红包的感谢语", a.store.data.optJSONArray("bless"), "例如：辛苦啦"));
+        content.addView(txTitleCard("红包标题", "red", "例如：恭喜发财，大吉大利"));
+        content.addView(txTitleCard("转账标题", "zhuan", "例如：拿去花，别客气"));
+        content.addView(txTitleCard("礼物标题", "gift", "例如：特意为你挑的"));
+        content.addView(txIconCard());
+    }
+
+    /* ---------- 红包美化：标题池（每种一池） + 共用 SVG 图标池 ---------- */
+
+    private LinearLayout txTitleCard(String title, String kind, String placeholder) {
+        LinearLayout poolCard = stringPoolCard(title, a.store.txTitles(kind), placeholder);
+        LinearLayout colorRow = Ui.row(a);
+        colorRow.setGravity(Gravity.CENTER_VERTICAL);
+        colorRow.setPadding(0, Ui.dp(a, 8), 0, 0);
+        colorRow.addView(Ui.text(a, "卡片配色", 12, Ui.mutedInk(a, a.store)), Ui.weighted());
+        JSONArray colors = a.store.data.optJSONArray("cardColors");
+        JSONObject ui = a.store.cardUi(kind);
+        int current = ui.optInt("color", 0);
+        for (int i = 0; colors != null && i < colors.length(); i++) {
+            final int index = i;
+            JSONArray pair = colors.optJSONArray(i);
+            if (pair == null) continue;
+            View swatch = new View(a);
+            android.graphics.drawable.GradientDrawable g = Ui.gradient(
+                    Ui.parseColor(pair.optString(0), 0xFFFA9D3B), Ui.parseColor(pair.optString(1), 0xFFF76B1C), Ui.dp(a, 8));
+            if (index == current) g.setStroke(Ui.dp(a, 2), Ui.ink(a, a.store));
+            swatch.setBackground(g);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(Ui.dp(a, 26), Ui.dp(a, 26));
+            lp.leftMargin = Ui.dp(a, 6);
+            swatch.setOnClickListener(v -> {
+                try {
+                    ui.put("color", index);
+                    a.store.save();
+                    refresh();
+                } catch (JSONException ignored) {
+                }
+            });
+            colorRow.addView(swatch, lp);
+        }
+        poolCard.addView(colorRow);
+        return poolCard;
+    }
+
+    private LinearLayout txIconCard() {
+        LinearLayout iconCard = card("红包/转账/礼物图标（随机抽取，点选删除）");
+        iconCard.addView(hint("发出时从下方图标里随机选一个；删空后卡片使用内置默认图标。"));
+        JSONArray icons = a.store.txIcons();
+        GridLayout grid = new GridLayout(a);
+        grid.setColumnCount(6);
+        for (int i = 0; i < icons.length(); i++) {
+            final int index = i;
+            String svg = icons.optString(i);
+            if (!SvgIcon.isSvg(svg)) continue;
+            FrameLayout cell = new FrameLayout(a);
+            cell.setBackground(Ui.rounded(Ui.surfaceStrong(a, a.store), Ui.dp(a, 12)));
+            cell.addView(SvgIcon.view(a, svg, Ui.plum(a, a.store), 26), new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER));
+            GridLayout.LayoutParams lp = new GridLayout.LayoutParams(
+                    GridLayout.spec(GridLayout.UNDEFINED, 1f), GridLayout.spec(GridLayout.UNDEFINED, 1f));
+            lp.width = 0;
+            lp.height = Ui.dp(a, 48);
+            lp.setMargins(Ui.dp(a, 4), Ui.dp(a, 4), Ui.dp(a, 4), Ui.dp(a, 4));
+            cell.setLayoutParams(lp);
+            cell.setOnClickListener(v -> Dialogs.confirm(a, a.store, "⌫", "删除这个图标？", null, "删除", true, () -> {
+                icons.remove(index);
+                a.store.save();
+                refresh();
+            }));
+            grid.addView(cell);
+        }
+        iconCard.addView(grid);
+        LinearLayout actions = Ui.row(a);
+        TextView add = Ui.boldText(a, "＋ 粘贴 SVG 添加", 12, Ui.plum(a, a.store));
+        add.setPadding(0, Ui.dp(a, 8), Ui.dp(a, 18), 0);
+        add.setOnClickListener(v -> Dialogs.prompt(a, a.store, "＋", "添加图标", "SVG 代码",
+                "<svg viewBox=\"0 0 24 24\" ...>...</svg>", "", value -> {
+                    if (!SvgIcon.isSvg(value)) {
+                        a.toast("请粘贴 <svg …> 矢量代码");
+                        return;
+                    }
+                    icons.put(value.trim());
+                    a.store.save();
+                    refresh();
+                }));
+        actions.addView(add);
+        TextView restore = Ui.boldText(a, "恢复内置图标", 12, Ui.mutedInk(a, a.store));
+        restore.setPadding(0, Ui.dp(a, 8), 0, 0);
+        restore.setOnClickListener(v -> {
+            for (String s : Icons.TX_CURATED) {
+                boolean exists = false;
+                for (int i = 0; i < icons.length(); i++) if (s.equals(icons.optString(i))) exists = true;
+                if (!exists) icons.put(s);
+            }
+            a.store.save();
+            refresh();
+        });
+        actions.addView(restore);
+        iconCard.addView(actions);
+        return iconCard;
     }
 
     private LinearLayout stringPoolCard(String title, JSONArray pool, String placeholder) {

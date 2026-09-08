@@ -26,6 +26,8 @@ import java.util.List;
 public class SettingsPage extends Page {
 
     private LinearLayout content;
+    /** 对应浏览器 #setTabs：base / style / data */
+    private String tab = "base";
 
     public SettingsPage(MainActivity activity) {
         super(activity);
@@ -44,15 +46,46 @@ public class SettingsPage extends Page {
         JSONObject role = a.store.role();
         if (role == null) return;
 
-        renderRoleCard(role);
-        renderNamesCard(role);
-        renderReplyCard();
-        renderChatOptCard();
-        renderSimCard();
-        renderStyleCard();
-        renderSoundCard();
-        renderWalletCard(role);
-        renderDataCard();
+        LinearLayout tabs = Ui.row(a);
+        tabs.setPadding(0, 0, 0, Ui.dp(a, 8));
+        tabs.addView(tabButton("基础", "base"));
+        tabs.addView(tabButton("样式", "style"));
+        tabs.addView(tabButton("数据", "data"));
+        content.addView(tabs);
+
+        switch (tab) {
+            case "style":
+                renderStyleCard();
+                break;
+            case "data":
+                renderWalletCard(role);
+                renderDataCard();
+                break;
+            default:
+                renderRoleCard(role);
+                renderNamesCard(role);
+                renderReplyCard();
+                renderChatOptCard();
+                renderSimCard();
+                renderSoundCard();
+        }
+    }
+
+    private TextView tabButton(String label, String id) {
+        boolean on = tab.equals(id);
+        TextView button = Ui.boldText(a, label, 13, on ? Color.WHITE : Ui.ink(a, a.store));
+        button.setBackground(on
+                ? Ui.rounded(Ui.plum(a, a.store), Ui.dp(a, 12))
+                : Ui.roundedStroke(0x00000000, Ui.dp(a, 12), Ui.line(a, a.store), Ui.dp(a, 1)));
+        button.setPadding(Ui.dp(a, 14), Ui.dp(a, 8), Ui.dp(a, 14), Ui.dp(a, 8));
+        LinearLayout.LayoutParams lp = Ui.lp(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.rightMargin = Ui.dp(a, 8);
+        button.setLayoutParams(lp);
+        button.setOnClickListener(v -> {
+            tab = id;
+            refresh();
+        });
+        return button;
     }
 
     /* ---------- 折叠卡片 ---------- */
@@ -62,7 +95,8 @@ public class SettingsPage extends Page {
         LinearLayout head = Ui.row(a);
         TextView label = Ui.boldText(a, title, 15, Ui.ink(a, a.store));
         head.addView(label, Ui.weighted());
-        TextView arrow = Ui.boldText(a, "▾", 14, Ui.faintInk(a, a.store));
+        View arrow = SvgIcon.view(a, Icons.CHEVRON, Ui.faintInk(a, a.store), 18);
+        arrow.setRotation(180);
         head.addView(arrow);
         box.addView(head);
         LinearLayout body = Ui.column(a);
@@ -70,7 +104,7 @@ public class SettingsPage extends Page {
         head.setOnClickListener(v -> {
             boolean open = body.getVisibility() == View.VISIBLE;
             body.setVisibility(open ? View.GONE : View.VISIBLE);
-            arrow.setText(open ? "▸" : "▾");
+            arrow.animate().rotation(open ? 0 : 180).setDuration(160).start();
         });
         box.setTag(body);
         return box;

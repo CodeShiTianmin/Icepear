@@ -41,9 +41,20 @@ public abstract class Page {
     /* ---------- 通用页面结构：标题栏 + 滚动内容 ---------- */
 
     protected LinearLayout pageWithBar(String title, LinearLayout content) {
+        return pageWithBar(title, content, null);
+    }
+
+    /** 带右侧操作按钮的页面（如朋友圈的“写朋友圈”） */
+    protected LinearLayout pageWithBar(String title, LinearLayout content, View action) {
         LinearLayout page = Ui.column(a);
         page.setBackgroundColor(Ui.paper(a, a.store));
-        page.addView(pageBar(title));
+        LinearLayout bar = pageBar(title);
+        if (action != null) {
+            View spacer = new View(a);
+            bar.addView(spacer, new LinearLayout.LayoutParams(0, 1, 1f));
+            bar.addView(action);
+        }
+        page.addView(bar);
         ScrollView scroll = new ScrollView(a);
         scroll.setFillViewport(true);
         content.setPadding(Ui.dp(a, 14), Ui.dp(a, 10), Ui.dp(a, 14), Ui.dp(a, 24));
@@ -57,8 +68,10 @@ public abstract class Page {
         LinearLayout bar = Ui.row(a);
         bar.setBackgroundColor(Ui.topBg(a, a.store));
         bar.setPadding(Ui.dp(a, 10), Ui.dp(a, 10), Ui.dp(a, 14), Ui.dp(a, 10));
-        TextView back = Ui.boldText(a, "‹", 26, Ui.ink(a, a.store));
-        back.setPadding(Ui.dp(a, 8), 0, Ui.dp(a, 16), 0);
+        bar.setGravity(Gravity.CENTER_VERTICAL);
+        View back = SvgIcon.view(a, Icons.BACK, Ui.ink(a, a.store), 22);
+        back.setPadding(Ui.dp(a, 6), Ui.dp(a, 6), Ui.dp(a, 12), Ui.dp(a, 6));
+        back.setContentDescription("返回");
         back.setOnClickListener(v -> a.onBackPressed());
         bar.addView(back);
         TextView label = Ui.boldText(a, title, 17, Ui.ink(a, a.store));

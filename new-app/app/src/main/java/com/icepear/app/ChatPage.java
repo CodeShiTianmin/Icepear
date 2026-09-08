@@ -44,6 +44,7 @@ public class ChatPage extends Page {
     private TextView nameView;
     private FrameLayout avatarBox;
     private LinearLayout panelBox;
+    private ImageView emojiButton;
     private LinearLayout multiBar;
     private TextView multiCount;
 
@@ -81,19 +82,35 @@ public class ChatPage extends Page {
         names.addView(statusView);
         names.addView(typingView);
         top.addView(names, Ui.weighted());
-        TextView menuButton = Ui.boldText(a, "⊞", 24, Ui.ink(a, a.store));
-        menuButton.setPadding(Ui.dp(a, 10), 0, Ui.dp(a, 4), 0);
+        boolean dark = Ui.dark(a.store);
+        ImageView skinButton = SvgIcon.view(a, dark ? Icons.SUN : Icons.MOON, Ui.ink(a, a.store), 22);
+        skinButton.setContentDescription(dark ? "日间模式" : "夜间模式");
+        skinButton.setPadding(Ui.dp(a, 8), Ui.dp(a, 8), Ui.dp(a, 8), Ui.dp(a, 8));
+        skinButton.setBackground(Ui.rounded(Ui.surfaceStrong(a, a.store), Ui.dp(a, 19)));
+        skinButton.setOnClickListener(v -> a.toggleDark());
+        top.addView(skinButton, new LinearLayout.LayoutParams(Ui.dp(a, 38), Ui.dp(a, 38)));
+        ImageView menuButton = SvgIcon.view(a, Icons.MORE, Ui.ink(a, a.store), 22);
+        menuButton.setPadding(Ui.dp(a, 8), Ui.dp(a, 8), Ui.dp(a, 8), Ui.dp(a, 8));
+        menuButton.setBackground(Ui.rounded(Ui.surfaceStrong(a, a.store), Ui.dp(a, 19)));
         menuButton.setContentDescription("功能中心");
         menuButton.setOnClickListener(v -> a.goPage("pageMenu", true));
-        top.addView(menuButton);
+        LinearLayout.LayoutParams mlp = new LinearLayout.LayoutParams(Ui.dp(a, 38), Ui.dp(a, 38));
+        mlp.leftMargin = Ui.dp(a, 8);
+        top.addView(menuButton, mlp);
         page.addView(top);
 
-        /* 聊天区 */
+        /* 聊天区：点击空白处收起键盘与面板 */
         chatScroll = new ScrollView(a);
         chatScroll.setFillViewport(true);
         chatArea = Ui.column(a);
         chatArea.setPadding(Ui.dp(a, 10), Ui.dp(a, 8), Ui.dp(a, 10), Ui.dp(a, 12));
+        chatArea.setClickable(true);
+        chatArea.setOnClickListener(v -> dismissInput());
         chatScroll.addView(chatArea);
+        chatScroll.setOnTouchListener((v, ev) -> {
+            if (ev.getAction() == android.view.MotionEvent.ACTION_DOWN) dismissInput();
+            return false;
+        });
         applyWallpaper(chatScroll);
         page.addView(chatScroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
@@ -106,8 +123,13 @@ public class ChatPage extends Page {
         cancel.setOnClickListener(v -> exitSelection());
         multiCount = Ui.text(a, "已选 0 条", 13, Ui.ink(a, a.store));
         multiCount.setGravity(Gravity.CENTER);
-        TextView forward = Ui.boldText(a, "转发", 14, Ui.plum(a, a.store));
-        forward.setOnClickListener(v -> forwardSelected());
+        LinearLayout forward = Ui.row(a);
+        forward.setGravity(Gravity.CENTER_VERTICAL);
+        forward.addView(SvgIcon.view(a, Icons.HEART, Ui.plum(a, a.store), 16));
+        TextView forwardText = Ui.boldText(a, "珍藏", 14, Ui.plum(a, a.store));
+        forwardText.setPadding(Ui.dp(a, 4), 0, 0, 0);
+        forward.addView(forwardText);
+        forward.setOnClickListener(v -> favoriteSelected());
         TextView delete = Ui.boldText(a, "删除", 14, a.getColor(R.color.danger));
         delete.setPadding(Ui.dp(a, 18), 0, 0, 0);
         delete.setOnClickListener(v -> deleteSelected());
@@ -132,38 +154,68 @@ public class ChatPage extends Page {
         quoteBar.setVisibility(View.GONE);
         page.addView(quoteBar);
 
-        /* 输入栏 */
+        /* 输入栏：表情 / 输入框 / 加号 / 发送（对应浏览器版 #inputBar） */
         LinearLayout input = Ui.row(a);
         input.setBackgroundColor(Ui.navBg(a, a.store));
+        input.setGravity(Gravity.CENTER_VERTICAL);
         input.setPadding(Ui.dp(a, 8), Ui.dp(a, 8), Ui.dp(a, 8), Ui.dp(a, 8));
-        TextView emojiButton = Ui.text(a, "😊", 22, Ui.ink(a, a.store));
-        emojiButton.setPadding(Ui.dp(a, 6), 0, Ui.dp(a, 6), 0);
+        View topLine = new View(a);
+        topLine.setBackgroundColor(Ui.line(a, a.store));
+        page.addView(topLine, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1));
+        emojiButton = SvgIcon.view(a, Icons.SMILE, Ui.ink(a, a.store), 26);
+        emojiButton.setPadding(Ui.dp(a, 6), Ui.dp(a, 6), Ui.dp(a, 6), Ui.dp(a, 6));
+        emojiButton.setContentDescription("表情");
         emojiButton.setOnClickListener(v -> togglePanel("emoji"));
-        input.addView(emojiButton);
+        input.addView(emojiButton, new LinearLayout.LayoutParams(Ui.dp(a, 38), Ui.dp(a, 38)));
         textInput = Dialogs.makeInput(a, a.store, false);
         textInput.setHint("说点什么…");
-        textInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        textInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         textInput.setMaxLines(4);
-        input.addView(textInput, Ui.weighted());
-        TextView plusButton = Ui.text(a, "＋", 24, Ui.ink(a, a.store));
-        plusButton.setPadding(Ui.dp(a, 8), 0, Ui.dp(a, 8), 0);
+        textInput.setBackground(Ui.rounded(Ui.surfaceStrong(a, a.store), Ui.dp(a, 19)));
+        textInput.setPadding(Ui.dp(a, 14), Ui.dp(a, 9), Ui.dp(a, 14), Ui.dp(a, 9));
+        textInput.setOnFocusChangeListener((v, focused) -> {
+            if (focused) closePanel();
+        });
+        textInput.setOnClickListener(v -> closePanel());
+        LinearLayout.LayoutParams tlp = Ui.weighted();
+        tlp.leftMargin = Ui.dp(a, 4);
+        tlp.rightMargin = Ui.dp(a, 4);
+        input.addView(textInput, tlp);
+        ImageView plusButton = SvgIcon.view(a, Icons.PLUS_CIRCLE, Ui.ink(a, a.store), 26);
+        plusButton.setPadding(Ui.dp(a, 6), Ui.dp(a, 6), Ui.dp(a, 6), Ui.dp(a, 6));
+        plusButton.setContentDescription("更多");
         plusButton.setOnClickListener(v -> togglePanel("plus"));
-        input.addView(plusButton);
-        TextView sendButton = Ui.boldText(a, "发送", 14, Color.WHITE);
-        sendButton.setBackground(Ui.rounded(Ui.plum(a, a.store), Ui.dp(a, 12)));
-        sendButton.setPadding(Ui.dp(a, 14), Ui.dp(a, 8), Ui.dp(a, 14), Ui.dp(a, 8));
+        input.addView(plusButton, new LinearLayout.LayoutParams(Ui.dp(a, 38), Ui.dp(a, 38)));
+        ImageView sendButton = SvgIcon.view(a, Icons.SEND, Color.WHITE, 18);
+        sendButton.setBackground(Ui.rounded(Ui.plum(a, a.store), Ui.dp(a, 19)));
+        sendButton.setPadding(Ui.dp(a, 10), Ui.dp(a, 10), Ui.dp(a, 10), Ui.dp(a, 10));
+        sendButton.setContentDescription("发送");
         sendButton.setOnClickListener(v -> sendUser());
-        input.addView(sendButton);
+        LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(Ui.dp(a, 38), Ui.dp(a, 38));
+        slp.leftMargin = Ui.dp(a, 4);
+        input.addView(sendButton, slp);
         page.addView(input);
 
-        /* 面板容器 */
+        /* 面板容器（表情/动图/拍一拍 三页签，或加号面板） */
         panelBox = Ui.column(a);
         panelBox.setBackgroundColor(Ui.surface(a, a.store));
         panelBox.setVisibility(View.GONE);
         page.addView(panelBox, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(a, 220)));
+                ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(a, 250)));
 
         return page;
+    }
+
+    /** 键盘弹出时关闭面板，避免两者叠加 */
+    public void onKeyboard(boolean open) {
+        if (open && panelBox != null && panelBox.getVisibility() == View.VISIBLE) closePanel();
+        if (chatScroll != null) chatScroll.post(() -> chatScroll.fullScroll(View.FOCUS_DOWN));
+    }
+
+    private void dismissInput() {
+        a.hideKeyboard();
+        closePanel();
     }
 
     private void applyWallpaper(View target) {
@@ -387,10 +439,9 @@ public class ChatPage extends Page {
     /** 红包/转账/礼物卡片 */
     private View buildTxCard(JSONObject msg, int index) {
         String type = msg.optString("type");
-        JSONObject cardUi = a.store.data.optJSONObject("cardUi");
-        JSONObject ui = cardUi != null ? cardUi.optJSONObject(type) : null;
+        JSONObject ui = a.store.cardUi(type);
         JSONArray colors = a.store.data.optJSONArray("cardColors");
-        int colorIndex = ui != null ? ui.optInt("color", 0) : 0;
+        int colorIndex = ui.optInt("color", 0);
         int start = 0xFFFA9D3B, end = 0xFFF76B1C;
         if (colors != null && colorIndex < colors.length()) {
             JSONArray pair = colors.optJSONArray(colorIndex);
@@ -406,14 +457,21 @@ public class ChatPage extends Page {
         card.setPadding(Ui.dp(a, 14), Ui.dp(a, 12), Ui.dp(a, 14), Ui.dp(a, 12));
         card.setAlpha(handled ? 0.72f : 1f);
         card.setMinimumWidth(Ui.dp(a, 210));
-        TextView icon = Ui.text(a, ui != null ? ui.optString("icon", "🧧") : "🧧", 26, Color.WHITE);
-        card.addView(icon);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        String iconSvg = msg.optString("icon", "");
+        if (!SvgIcon.isSvg(iconSvg)) iconSvg = a.store.pickTxIcon(type);
+        FrameLayout iconBox = new FrameLayout(a);
+        iconBox.setBackground(Ui.rounded(0x33FFFFFF, Ui.dp(a, 12)));
+        iconBox.addView(SvgIcon.view(a, iconSvg, Color.WHITE, 24), new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER));
+        card.addView(iconBox, new LinearLayout.LayoutParams(Ui.dp(a, 42), Ui.dp(a, 42)));
         LinearLayout copy = Ui.column(a);
         copy.setPadding(Ui.dp(a, 10), 0, 0, 0);
         String title;
-        if ("gift".equals(type)) title = msg.optString("gift", "礼物");
-        else if (msg.has("note") && !msg.optString("note", "").isEmpty()) title = msg.optString("note");
-        else title = ui != null ? ui.optString("t", "red".equals(type) ? "恭喜发财" : "转账") : "恭喜发财";
+        if ("gift".equals(type) && !msg.optString("gift", "").isEmpty()) title = msg.optString("gift");
+        else if (!msg.optString("note", "").isEmpty()) title = msg.optString("note");
+        else if (!msg.optString("title", "").isEmpty()) title = msg.optString("title");
+        else title = Store.defaultTxTitle(type);
         copy.addView(Ui.boldText(a, title, 14, Color.WHITE));
         double amount = ChatLogic.txAmount(msg);
         String sub = "¥" + Ui.fmtMoney(amount) + " · " + txStatusLabel(msg);
@@ -541,34 +599,82 @@ public class ChatPage extends Page {
     /* ---------- 面板 ---------- */
 
     private String openPanel = "";
+    private String panelTab = "emoji";
 
     private void togglePanel(String which) {
         if (which.equals(openPanel)) {
-            panelBox.setVisibility(View.GONE);
-            openPanel = "";
+            closePanel();
             return;
         }
+        a.hideKeyboard();
         openPanel = which;
         panelBox.removeAllViews();
         panelBox.setVisibility(View.VISIBLE);
         if ("emoji".equals(which)) buildEmojiPanel();
         else buildPlusPanel();
+        if (emojiButton != null) {
+            emojiButton.setImageDrawable(SvgIcon.of(a, "emoji".equals(which) ? Icons.KEYBOARD : Icons.SMILE,
+                    Ui.ink(a, a.store), 26));
+        }
+        chatScroll.post(() -> chatScroll.fullScroll(View.FOCUS_DOWN));
     }
 
     private void closePanel() {
+        if (panelBox == null) return;
         panelBox.setVisibility(View.GONE);
         openPanel = "";
+        if (emojiButton != null) {
+            emojiButton.setImageDrawable(SvgIcon.of(a, Icons.SMILE, Ui.ink(a, a.store), 26));
+        }
     }
 
+    /** 表情面板：表情 / 动图 / 拍一拍 三个页签（对应浏览器版 .panel-tabs） */
     private void buildEmojiPanel() {
+        panelBox.removeAllViews();
+        LinearLayout tabs = Ui.row(a);
+        tabs.setGravity(Gravity.CENTER);
+        tabs.setPadding(Ui.dp(a, 10), Ui.dp(a, 8), Ui.dp(a, 10), Ui.dp(a, 4));
+        String[][] defs = {{"emoji", "表情"}, {"sticker", "动图"}, {"poke", "拍一拍"}};
+        for (String[] def : defs) {
+            final String id = def[0];
+            boolean on = id.equals(panelTab);
+            TextView tab = Ui.boldText(a, def[1], 13, on ? Color.WHITE : Ui.mutedInk(a, a.store));
+            tab.setGravity(Gravity.CENTER);
+            tab.setPadding(Ui.dp(a, 16), Ui.dp(a, 6), Ui.dp(a, 16), Ui.dp(a, 6));
+            tab.setBackground(Ui.rounded(on ? Ui.plum(a, a.store) : Ui.surfaceStrong(a, a.store), Ui.dp(a, 14)));
+            LinearLayout.LayoutParams lp = Ui.lp(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.setMargins(Ui.dp(a, 4), 0, Ui.dp(a, 4), 0);
+            tab.setOnClickListener(v -> {
+                panelTab = id;
+                buildEmojiPanel();
+            });
+            tabs.addView(tab, lp);
+        }
+        panelBox.addView(tabs);
+
         ScrollView scroll = new ScrollView(a);
         LinearLayout box = Ui.column(a);
-        box.setPadding(Ui.dp(a, 10), Ui.dp(a, 10), Ui.dp(a, 10), Ui.dp(a, 10));
+        box.setPadding(Ui.dp(a, 10), Ui.dp(a, 6), Ui.dp(a, 10), Ui.dp(a, 10));
+        switch (panelTab) {
+            case "sticker":
+                buildStickerTab(box);
+                break;
+            case "poke":
+                buildPokeTab(box);
+                break;
+            default:
+                buildEmojiTab(box);
+        }
+        scroll.addView(box);
+        panelBox.addView(scroll, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+    }
 
+    private void buildEmojiTab(LinearLayout box) {
         JSONArray emoji = a.store.data.optJSONArray("emoji");
         List<Integer> commonEmoji = commonEmojiIndexes(emoji);
         if (!commonEmoji.isEmpty()) {
-            box.addView(Ui.boldText(a, "⭐ 常用表情", 13, Ui.mutedInk(a, a.store)));
+            box.addView(sectionLabel("常用"));
             GridLayout freqGrid = new GridLayout(a);
             freqGrid.setColumnCount(7);
             for (int index : commonEmoji) {
@@ -576,18 +682,20 @@ public class ChatPage extends Page {
             }
             box.addView(freqGrid);
         }
-        box.addView(Ui.boldText(a, "Emoji", 13, Ui.mutedInk(a, a.store)));
         GridLayout emojiGrid = new GridLayout(a);
         emojiGrid.setColumnCount(7);
         for (int i = 0; emoji != null && i < emoji.length(); i++) {
             emojiGrid.addView(emojiCell(emoji.optString(i), i));
         }
+        if (emoji == null || emoji.length() == 0) box.addView(hint("暂无表情，去“字卡设置 → 表情”添加"));
         box.addView(emojiGrid);
+    }
 
+    private void buildStickerTab(LinearLayout box) {
         JSONArray stickers = a.store.data.optJSONArray("stickers");
         List<Integer> commonStickers = commonStickerIndexes(stickers);
         if (!commonStickers.isEmpty()) {
-            box.addView(Ui.boldText(a, "⭐ 常用", 13, Ui.mutedInk(a, a.store)));
+            box.addView(sectionLabel("常用"));
             GridLayout freqStickerGrid = new GridLayout(a);
             freqStickerGrid.setColumnCount(4);
             for (int index : commonStickers) {
@@ -596,7 +704,6 @@ public class ChatPage extends Page {
             }
             box.addView(freqStickerGrid);
         }
-        box.addView(Ui.boldText(a, "表情包", 13, Ui.mutedInk(a, a.store)));
         GridLayout stickerGrid = new GridLayout(a);
         stickerGrid.setColumnCount(4);
         for (int i = 0; stickers != null && i < stickers.length(); i++) {
@@ -604,12 +711,48 @@ public class ChatPage extends Page {
             if (cell != null) stickerGrid.addView(cell);
         }
         if (stickers == null || stickers.length() == 0) {
-            box.addView(hint("暂无表情包，去“字卡 → 表情”添加"));
+            box.addView(hint("暂无表情包，去“字卡设置 → 表情”添加"));
         }
         box.addView(stickerGrid);
-        scroll.addView(box);
-        panelBox.addView(scroll, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+    }
+
+    /** 拍一拍页签：点一条即发送“你拍了拍…”系统消息 */
+    private void buildPokeTab(LinearLayout box) {
+        JSONObject role = a.store.role();
+        JSONArray pokes = role != null ? role.optJSONArray("pokes") : null;
+        if (pokes == null || pokes.length() == 0) {
+            box.addView(hint("暂无拍一拍文案，去“字卡设置 → 氛围感”添加"));
+            return;
+        }
+        for (int i = 0; i < pokes.length(); i++) {
+            final String poke = pokes.optString(i);
+            LinearLayout row = Ui.row(a);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setBackground(Ui.rounded(Ui.surfaceStrong(a, a.store), Ui.dp(a, 12)));
+            row.setPadding(Ui.dp(a, 12), Ui.dp(a, 10), Ui.dp(a, 12), Ui.dp(a, 10));
+            row.addView(SvgIcon.view(a, Icons.POKE, Ui.plum(a, a.store), 18));
+            TextView label = Ui.text(a, poke, 14, Ui.ink(a, a.store));
+            label.setPadding(Ui.dp(a, 10), 0, 0, 0);
+            row.addView(label, Ui.weighted());
+            LinearLayout.LayoutParams lp = Ui.lp(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.topMargin = Ui.dp(a, 6);
+            row.setOnClickListener(v -> {
+                sendPoke(poke);
+                closePanel();
+            });
+            box.addView(row, lp);
+        }
+    }
+
+    private void sendPoke(String poke) {
+        a.logic.addSys("你" + poke.replace("他", a.store.displayName()));
+        a.logic.scheduleReply();
+    }
+
+    private TextView sectionLabel(String text) {
+        TextView label = Ui.boldText(a, text, 12, Ui.mutedInk(a, a.store));
+        label.setPadding(Ui.dp(a, 4), Ui.dp(a, 4), 0, Ui.dp(a, 2));
+        return label;
     }
 
     private TextView emojiCell(String value, int index) {
@@ -688,28 +831,33 @@ public class ChatPage extends Page {
         return result;
     }
 
+    /** 加号面板：与浏览器版 #plusPanel 同序 */
+    private static final String[][] PLUS_ITEMS = {
+            {"相册", Icons.ALBUM}, {"红包", Icons.RED}, {"转账", Icons.ZHUAN}, {"定位", Icons.LOC},
+            {"小卖铺", Icons.SHOP}, {"视频", Icons.VIDEO}, {"朋友圈", Icons.NAV_MOMENTS},
+            {"他的日常", Icons.WX}, {"周报", Icons.WEEKLY},
+    };
+
     private void buildPlusPanel() {
+        ScrollView scroll = new ScrollView(a);
         GridLayout grid = new GridLayout(a);
         grid.setColumnCount(4);
         grid.setPadding(Ui.dp(a, 10), Ui.dp(a, 14), Ui.dp(a, 10), Ui.dp(a, 10));
-        String[][] items = {
-                {"🖼", "图片"}, {"🧧", "红包"}, {"💸", "转账"}, {"🎁", "礼物"},
-                {"📍", "位置"}, {"👋", "拍一拍"}, {"📹", "视频通话"}, {"📞", "他来电"},
-        };
-        for (String[] item : items) {
-            final String label = item[1];
+        for (String[] item : PLUS_ITEMS) {
+            final String label = item[0];
             LinearLayout cell = Ui.column(a);
             cell.setGravity(Gravity.CENTER);
-            TextView icon = Ui.text(a, item[0], 26, Ui.ink(a, a.store));
-            icon.setGravity(Gravity.CENTER);
             int size = Ui.dp(a, 56);
-            icon.setBackground(Ui.rounded(Ui.surfaceStrong(a, a.store), Ui.dp(a, 16)));
-            icon.setWidth(size);
-            icon.setHeight(size);
+            FrameLayout iconBox = new FrameLayout(a);
+            iconBox.setBackground(Ui.rounded(Ui.surfaceStrong(a, a.store), Ui.dp(a, 16)));
+            ImageView icon = SvgIcon.view(a, item[1], Ui.plum(a, a.store), 26);
+            FrameLayout.LayoutParams ilp = new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER);
+            iconBox.addView(icon, ilp);
+            cell.addView(iconBox, new LinearLayout.LayoutParams(size, size));
             TextView name = Ui.text(a, label, 11, Ui.mutedInk(a, a.store));
             name.setGravity(Gravity.CENTER);
             name.setPadding(0, Ui.dp(a, 4), 0, 0);
-            cell.addView(icon);
             cell.addView(name);
             GridLayout.LayoutParams lp = new GridLayout.LayoutParams(
                     GridLayout.spec(GridLayout.UNDEFINED, 1f), GridLayout.spec(GridLayout.UNDEFINED, 1f));
@@ -722,13 +870,15 @@ public class ChatPage extends Page {
             });
             grid.addView(cell);
         }
-        panelBox.addView(grid);
+        scroll.addView(grid);
+        panelBox.addView(scroll, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
     }
 
     private void onPlusAction(String label) {
         switch (label) {
-            case "图片":
-                a.pickFile("image/*", (bytes, mime, name) -> {
+            case "相册":
+                a.pickImage((bytes, mime, name) -> {
                     String ref = a.store.importImage(bytes, mime);
                     if (ref.isEmpty()) {
                         a.toast("图片导入失败");
@@ -747,34 +897,48 @@ public class ChatPage extends Page {
             case "转账":
                 sendTxDialog("zhuan", "转账");
                 break;
-            case "礼物":
+            case "定位":
+                sendLocation();
+                break;
+            case "小卖铺":
                 a.goPage("pageShop", true);
                 break;
-            case "位置":
-                Dialogs.prompt(a, a.store, "📍", "发送位置", "位置名称", "例如：家里", "", value -> {
-                    try {
-                        a.logic.addMsg("me", new JSONObject().put("type", "loc").put("text", value));
-                        a.logic.scheduleReply();
-                    } catch (JSONException ignored) {
-                    }
-                });
-                break;
-            case "拍一拍": {
-                JSONObject role = a.store.role();
-                JSONArray pokes = role != null ? role.optJSONArray("pokes") : null;
-                String poke = pokes != null && pokes.length() > 0
-                        ? pokes.optString(a.store.rand(0, pokes.length() - 1)) : "拍了拍他的头";
-                a.logic.addSys("你" + poke.replace("他", a.store.displayName()));
-                a.logic.scheduleReply();
-                break;
-            }
-            case "视频通话":
+            case "视频":
                 a.videoOverlay.startVideo();
                 break;
-            case "他来电":
-                a.videoOverlay.incomingCall();
+            case "朋友圈":
+                a.goPage("pageMoments", true);
+                break;
+            case "他的日常":
+                a.goPage("pageWeather", true);
+                break;
+            case "周报":
+                a.goPage("pageWeekly", true);
                 break;
         }
+    }
+
+    /** 定位：先从 hisLocs 候选里选，也可手动输入 */
+    private void sendLocation() {
+        JSONArray locs = a.store.data.optJSONArray("hisLocs");
+        Dialogs.Field where = new Dialogs.Field("loc", "位置名称");
+        where.placeholder = "例如：家里";
+        if (locs != null && locs.length() > 0) {
+            String[] values = new String[locs.length()];
+            for (int i = 0; i < locs.length(); i++) values[i] = locs.optString(i);
+            where.optionValues = values;
+            where.optionLabels = values;
+            where.value = values[0];
+        }
+        Dialogs.form(a, a.store, "📍", "发送位置", null, "发送", Dialogs.fields(where), values -> {
+            String value = values.getOrDefault("loc", "").trim();
+            if (value.isEmpty()) return;
+            try {
+                a.logic.addMsg("me", new JSONObject().put("type", "loc").put("text", value));
+                a.logic.scheduleReply();
+            } catch (JSONException ignored) {
+            }
+        });
     }
 
     private void sendTxDialog(String type, String title) {
@@ -820,6 +984,7 @@ public class ChatPage extends Page {
             JSONObject msg = new JSONObject().put("type", type).put("amount", amount)
                     .put("txVersion", 2).put("txStatus", "");
             if (note != null && !note.trim().isEmpty()) msg.put("note", note.trim());
+            a.logic.decorateTx(msg, type);
             JSONObject sent = a.logic.addMsg("me", msg);
             a.store.save();
             a.onWalletChanged();
@@ -1048,6 +1213,37 @@ public class ChatPage extends Page {
     private void syncSelection() {
         multiCount.setText("已选 " + selected.size() + " 条");
         renderChat(false);
+    }
+
+    /** 等价于浏览器 doFavorite()：把选中消息快照存为一条珍藏 */
+    private void favoriteSelected() {
+        if (selected.isEmpty()) {
+            a.toast("还没有选择要珍藏的");
+            return;
+        }
+        try {
+            JSONArray msgs = new JSONArray();
+            JSONArray chat = a.store.chat();
+            String[] keep = {"side", "type", "t", "read", "text", "src", "gift", "price", "amount",
+                    "quote", "items", "note", "icon", "title", "recall"};
+            for (int index : selected) {
+                JSONObject m = chat.optJSONObject(index);
+                if (m == null) continue;
+                JSONObject snap = new JSONObject();
+                for (String key : keep) if (m.has(key)) snap.put(key, m.get(key));
+                if (!snap.has("type")) snap.put("type", "text");
+                msgs.put(snap);
+            }
+            JSONObject entry = new JSONObject()
+                    .put("id", "mem" + System.currentTimeMillis())
+                    .put("t", System.currentTimeMillis())
+                    .put("msgs", msgs);
+            a.store.memories().put(entry);
+            a.store.save();
+            a.toast("已珍藏 " + msgs.length() + " 条");
+        } catch (JSONException ignored) {
+        }
+        exitSelection();
     }
 
     private void forwardSelected() {

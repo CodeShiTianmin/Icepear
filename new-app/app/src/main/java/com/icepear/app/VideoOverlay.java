@@ -12,8 +12,9 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 /**
- * 视频通话浮层：拨打（随机接听/拒接）、他来电、通话计时、最小化悬浮小窗
- * （可拖动、靠边贴边收起）、挂断。全部为原生 View 实现。
+ * 视频通话浮层，对应浏览器版 #videoScreen / #videoMini：
+ * 背景图（可换）、头像、状态、计时；底部「背景 / 最小化 / 挂断」三键；
+ * 最小化悬浮小窗（可拖动、贴边、带挂断）。
  */
 public class VideoOverlay {
 
@@ -67,32 +68,25 @@ public class VideoOverlay {
         }, wait);
     }
 
-    /* ---------- 他来电 ---------- */
-
-    public void incomingCall() {
-        showCallScreen(a.store.displayName() + " 邀请你视频通话", false);
-        LinearLayout actions = Ui.row(a);
-        actions.setGravity(Gravity.CENTER);
-        actions.setPadding(0, Ui.dp(a, 30), 0, 0);
-        TextView decline = circleButton("拒绝", 0xFFE05B4E, () -> endCall(false));
-        TextView accept = circleButton("接听", 0xFF3CB371, this::connect);
-        actions.addView(decline);
-        actions.addView(accept);
-        ((LinearLayout) fullScreen.getChildAt(0)).addView(actions);
-    }
-
-    private TextView circleButton(String label, int color, Runnable onClick) {
-        TextView button = Ui.boldText(a, label, 14, Color.WHITE);
-        button.setGravity(Gravity.CENTER);
-        button.setBackground(Ui.rounded(color, Ui.dp(a, 40)));
-        int size = Ui.dp(a, 72);
-        button.setWidth(size);
-        button.setHeight(size);
-        LinearLayout.LayoutParams lp = Ui.lp(size, size);
-        lp.setMargins(Ui.dp(a, 22), 0, Ui.dp(a, 22), 0);
-        button.setLayoutParams(lp);
-        button.setOnClickListener(v -> onClick.run());
-        return button;
+    /** 圆形 SVG 按钮 + 下方文字，等价于浏览器 #videoBtns button */
+    private LinearLayout circleButton(String label, String svg, int color, Runnable onClick) {
+        LinearLayout wrap = Ui.column(a);
+        wrap.setGravity(Gravity.CENTER_HORIZONTAL);
+        FrameLayout circle = new FrameLayout(a);
+        int size = Ui.dp(a, 60);
+        circle.setBackground(Ui.rounded(color, size / 2));
+        circle.addView(SvgIcon.view(a, svg, Color.WHITE, 26), new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER));
+        wrap.addView(circle, new LinearLayout.LayoutParams(size, size));
+        TextView text = Ui.text(a, label, 12, 0xEEFFFFFF);
+        text.setGravity(Gravity.CENTER);
+        text.setPadding(0, Ui.dp(a, 6), 0, 0);
+        wrap.addView(text);
+        LinearLayout.LayoutParams lp = Ui.lp(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.setMargins(Ui.dp(a, 18), 0, Ui.dp(a, 18), 0);
+        wrap.setLayoutParams(lp);
+        wrap.setOnClickListener(v -> onClick.run());
+        return wrap;
     }
 
     /* ---------- 通话界面 ---------- */
@@ -104,23 +98,10 @@ public class VideoOverlay {
         root.setVisibility(View.VISIBLE);
         root.setClickable(true);
         fullScreen = new FrameLayout(a);
-        android.graphics.Bitmap bg = Ui.decodeDataUrl(
-                a.store.resolveMedia(a.store.data.optString("videoBg", "")));
-        if (bg != null) {
-            android.graphics.drawable.BitmapDrawable drawable =
-                    new android.graphics.drawable.BitmapDrawable(a.getResources(), bg);
-            drawable.setGravity(Gravity.FILL);
-            fullScreen.setBackground(drawable);
-            View scrim = new View(a);
-            scrim.setBackgroundColor(0x66000000);
-            fullScreen.addView(scrim, new FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        } else {
-            fullScreen.setBackground(Ui.gradient(0xFF2B2333, 0xFF14101B, 0));
-        }
+        applyBackground();
         LinearLayout box = Ui.column(a);
         box.setGravity(Gravity.CENTER_HORIZONTAL);
-        box.setPadding(0, Ui.dp(a, 90), 0, 0);
+        box.setPadding(0, Ui.dp(a, 90) + a.insetTop, 0, 0);
         box.addView(Ui.avatar(a, a.store, "other", 96));
         TextView name = Ui.boldText(a, a.store.displayName(), 22, Color.WHITE);
         name.setGravity(Gravity.CENTER);
@@ -142,18 +123,46 @@ public class VideoOverlay {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
     }
 
+    /** 背景：data.videoBg 图片铺满 + 暗色遮罩；无图时为浏览器版的 #111 深色 */
+    private void applyBackground() {
+        if (fullScreen == null) return;
+        android.graphics.Bitmap bg = Ui.decodeDataUrl(
+                a.store.resolveMedia(a.store.data.optString("videoBg", "")));
+        if (bg != null) {
+            android.graphics.drawable.BitmapDrawable drawable =
+                    new android.graphics.drawable.BitmapDrawable(a.getResources(), bg);
+            drawable.setGravity(Gravity.FILL);
+            android.graphics.drawable.LayerDrawable layered = new android.graphics.drawable.LayerDrawable(
+                    new android.graphics.drawable.Drawable[]{
+                            drawable, new android.graphics.drawable.ColorDrawable(0x55000000)});
+            fullScreen.setBackground(layered);
+        } else {
+            fullScreen.setBackground(Ui.gradient(0xFF1A1620, 0xFF111111, 0));
+        }
+    }
+
+    private void pickBackground() {
+        a.pickImage((bytes, mime, name) -> {
+            try {
+                a.store.data.put("videoBg", a.store.importImage(bytes, mime));
+                a.store.save();
+                applyBackground();
+            } catch (Exception ignored) {
+            }
+        });
+    }
+
     private void addBottomBar(boolean connected) {
         LinearLayout bar = Ui.row(a);
         bar.setGravity(Gravity.CENTER);
         FrameLayout.LayoutParams barLp = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM);
-        barLp.bottomMargin = Ui.dp(a, 46);
+        barLp.bottomMargin = Ui.dp(a, 46) + a.insetBottom;
+        bar.addView(circleButton("背景", Icons.IMAGE_BG, 0x66FFFFFF, this::pickBackground));
         if (connected) {
-            TextView mini = circleButton("缩小", 0xFF6D6A75, this::minimize);
-            bar.addView(mini);
+            bar.addView(circleButton("最小化", Icons.MINIMIZE, 0x66FFFFFF, this::minimize));
         }
-        TextView hangup = circleButton("挂断", 0xFFE05B4E, () -> endCall(connected));
-        bar.addView(hangup);
+        bar.addView(circleButton("挂断", Icons.PHONE_OFF, 0xFFE05B4E, () -> endCall(connected)));
         fullScreen.addView(bar, barLp);
     }
 
@@ -187,10 +196,12 @@ public class VideoOverlay {
         root.setVisibility(View.GONE);
         root.setClickable(false);
         if (was || connected) {
-            a.logic.addSys("视频通话 " + Ui.fmtDur(Math.max(1, duration)));
+            a.logic.addSys("视频通话已结束 " + Ui.fmtDur(Math.max(1, duration)));
+            a.logic.logVideo(duration);
         } else {
             a.logic.addSys("视频通话未接通");
         }
+        a.logic.scheduleReply();
     }
 
     /* ---------- 最小化悬浮窗 ---------- */
@@ -211,9 +222,18 @@ public class VideoOverlay {
         timerMini.setGravity(Gravity.CENTER);
         timerMini.setPadding(0, Ui.dp(a, 4), 0, 0);
         miniWindow.addView(timerMini);
+        TextView miniHang = Ui.boldText(a, "挂断", 11, Color.WHITE);
+        miniHang.setGravity(Gravity.CENTER);
+        miniHang.setBackground(Ui.rounded(0xFFE05B4E, Ui.dp(a, 10)));
+        miniHang.setPadding(Ui.dp(a, 10), Ui.dp(a, 4), Ui.dp(a, 10), Ui.dp(a, 4));
+        LinearLayout.LayoutParams hangLp = Ui.lp(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        hangLp.topMargin = Ui.dp(a, 6);
+        miniHang.setLayoutParams(hangLp);
+        miniHang.setOnClickListener(v -> endCall(true));
+        miniWindow.addView(miniHang);
         FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
-                Ui.dp(a, 84), ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.END);
-        lp.topMargin = Ui.dp(a, 120);
+                Ui.dp(a, 88), ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.END);
+        lp.topMargin = Ui.dp(a, 120) + a.insetTop;
         lp.rightMargin = Ui.dp(a, 10);
         root.addView(miniWindow, lp);
         root.setClickable(false);
