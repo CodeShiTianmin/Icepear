@@ -63,6 +63,31 @@ public final class ChatLogic {
         return addMsg("sys", msg);
     }
 
+    /**
+     * 拍一拍文案：按 store.pokeFormat() 模板拼接。
+     * actor 为 "me" 时是「你拍了拍他」，为 "other" 时是「他拍了拍你」；文案里的“他”会替换成被拍的一方。
+     */
+    public String pokeText(String actor, String poke) {
+        return pokeText(actor, "me".equals(actor) ? store.displayName() : "你", poke);
+    }
+
+    public String pokeText(String actor, String target, String poke) {
+        String who = "me".equals(actor) ? "你" : store.displayName();
+        String body = poke == null ? "" : poke.replace("他", target);
+        return store.pokeFormat().replace("{我}", who).replace("{他}", target).replace("{文案}", body);
+    }
+
+    /** 拍一拍：写入一条带 poke 标记的系统消息（side 记录发起方，供周报按人统计） */
+    public JSONObject sendPoke(String actor, String poke) {
+        JSONObject msg = new JSONObject();
+        try {
+            msg.put("type", "sys").put("text", pokeText(actor, poke))
+                    .put("poke", poke == null ? "" : poke).put("pokeBy", actor);
+        } catch (JSONException ignored) {
+        }
+        return addMsg("sys", msg);
+    }
+
     public JSONObject addMsg(String side, JSONObject msg) {
         try {
             msg.put("side", side);
@@ -317,9 +342,16 @@ public final class ChatLogic {
         try {
             JSONObject role = store.role();
             if (role == null) return;
-            int kind = store.rand(0, 6);
+            int kind = store.rand(0, 7);
             if (kind == 0) {
                 cardFallback();
+                return;
+            }
+            if (kind == 7) {
+                JSONArray pokes = role.optJSONArray("pokes");
+                if (pokes != null && pokes.length() > 0) {
+                    sendPoke("other", pokes.optString(store.rand(0, pokes.length() - 1)));
+                } else cardFallback();
                 return;
             }
             if (kind == 1) {
