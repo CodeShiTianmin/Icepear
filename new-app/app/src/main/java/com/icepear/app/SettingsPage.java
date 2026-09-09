@@ -55,10 +55,11 @@ public class SettingsPage extends Page {
 
         switch (tab) {
             case "style":
-                renderStyleCard();
+                renderStyleCards();
                 break;
             case "data":
-                renderWalletCard(role);
+                renderPatchCard();
+                renderSnapshotCard();
                 renderDataCard();
                 break;
             default:
@@ -90,24 +91,15 @@ public class SettingsPage extends Page {
 
     /* ---------- 折叠卡片 ---------- */
 
+    /** 设置页所有分组默认折叠，展开状态在本页内记忆 */
+    private final java.util.Set<String> opened = new java.util.HashSet<>();
+
     private LinearLayout section(String title) {
-        LinearLayout box = card(null);
-        LinearLayout head = Ui.row(a);
-        TextView label = Ui.boldText(a, title, 15, Ui.ink(a, a.store));
-        head.addView(label, Ui.weighted());
-        View arrow = SvgIcon.view(a, Icons.CHEVRON, Ui.faintInk(a, a.store), 18);
-        arrow.setRotation(180);
-        head.addView(arrow);
-        box.addView(head);
-        LinearLayout body = Ui.column(a);
-        box.addView(body);
-        head.setOnClickListener(v -> {
-            boolean open = body.getVisibility() == View.VISIBLE;
-            body.setVisibility(open ? View.GONE : View.VISIBLE);
-            arrow.animate().rotation(open ? 0 : 180).setDuration(160).start();
-        });
-        box.setTag(body);
-        return box;
+        return section(title, null, opened.contains(title),
+                open -> {
+                    if (open) opened.add(title);
+                    else opened.remove(title);
+                });
     }
 
     private LinearLayout body(LinearLayout section) {
@@ -391,6 +383,10 @@ public class SettingsPage extends Page {
         LinearLayout body = body(section);
         body.addView(simSwitch(sim, "bioClock", "生物钟状态（他的状态自动变化）", () -> a.logic.startStatusLoop()));
         body.addView(simSwitch(sim, "recallReact", "撤回后他会追问", null));
+        body.addView(hint("追问文案在“氛围”页的“撤回后他会追问”文案池里维护"));
+        body.addView(simSwitch(sim, "memory", "他说过的回忆（偶尔重提他说过的话）", null));
+        body.addView(valueRow("主动发红包/转账/礼物概率（%）", String.valueOf(sim.optInt("txRate", 20)), () ->
+                promptInt2(sim, "txRate", "主动发红包/转账/礼物概率（%）", 0, 100)));
         body.addView(simSwitch(sim, "festival", "节日自动送祝福", () -> a.logic.checkFestival()));
         body.addView(simSwitch(sim, "autoNight", "自动夜间模式（22:00-7:00）", () -> a.logic.checkAutoNight()));
         content.addView(section);
@@ -409,8 +405,34 @@ public class SettingsPage extends Page {
 
     /* ---------- 样式 ---------- */
 
-    private void renderStyleCard() {
-        LinearLayout section = section("样式与氛围");
+    private static final String[] BUBBLE_SWATCHES = {
+            "#95ec69", "#6d3b58", "#f6c1cc", "#ffd8a8", "#bfe3ff", "#c9f0d6", "#e6ddff", "#fff", "#fffaf7", "#2d252a", "#111", "#ffffff"};
+    private static final String[] PAGE_SWATCHES = {
+            "#f8f3ef", "#fff4f4", "#f4f7fb", "#f4f8f5", "#f7f2ff", "#fffaf7", "#ffffff", "#eef2f7", "#1b171a"};
+    private static final String[] ACCENT_SWATCHES = {
+            "#6d3b58", "#e08578", "#7fb28f", "#5b8dd6", "#c47dbb", "#d9a441", "#3f7f7a", "#333333"};
+
+    private void renderStyleCards() {
+        renderPreviewCard();
+        renderAppearanceCard();
+        renderFontCard();
+        renderBubbleCard();
+        renderWallpaperCard();
+        renderBeautyCard();
+        renderBootCard();
+    }
+
+    /** 预览：把当前气泡/壁纸/美化效果合在一起看 */
+    private void renderPreviewCard() {
+        LinearLayout section = section("预览");
+        LinearLayout body = body(section);
+        body.addView(bubblePreview());
+        body.addView(hint("这里实时反映气泡、字体、壁纸和全局美化的当前效果"));
+        content.addView(section);
+    }
+
+    private void renderAppearanceCard() {
+        LinearLayout section = section("界面外观");
         LinearLayout body = body(section);
         body.addView(switchRow("夜间模式", a.store.data.optBoolean("dark", false), value -> {
             try {
@@ -421,33 +443,134 @@ public class SettingsPage extends Page {
             } catch (JSONException ignored) {
             }
         }));
-        JSONObject font = a.store.data.optJSONObject("font");
-        body.addView(valueRow("字号", font.optInt("size", 15) + "sp", () ->
-                promptInt2(font, "size", "字号（12~22）", 12, 22)));
-        body.addView(valueRow("气泡圆角", String.valueOf(font.optInt("radius", 10)), () ->
-                promptInt2(font, "radius", "气泡圆角（0~24）", 0, 24)));
-        JSONObject theme = a.store.data.optJSONObject("theme");
-        body.addView(valueRow("我的气泡颜色", theme.optString("myBg", "#95ec69"), () ->
-                promptColor(theme, "myBg", "我的气泡颜色")));
-        body.addView(valueRow("我的文字颜色", theme.optString("myText", "#111"), () ->
-                promptColor(theme, "myText", "我的文字颜色")));
-        body.addView(valueRow("他的气泡颜色", theme.optString("hisBg", "#fff"), () ->
-                promptColor(theme, "hisBg", "他的气泡颜色")));
-        body.addView(valueRow("他的文字颜色", theme.optString("hisText", "#111"), () ->
-                promptColor(theme, "hisText", "他的文字颜色")));
-        JSONObject wallpaper = a.store.data.optJSONObject("wallpaper");
-        body.addView(valueRow("聊天壁纸", wallpaper.optString("image", "").isEmpty()
-                ? wallpaper.optString("preset", "默认") : "自定义图片", this::pickWallpaper));
-        body.addView(valueRow("开屏动画", bootAnimLabel(), this::pickBootAnim));
         body.addView(valueRow("视频通话背景", a.store.data.optString("videoBg", "").isEmpty()
                 ? "默认" : "自定义图片", this::pickVideoBg));
+        content.addView(section);
+    }
+
+    private void renderFontCard() {
+        JSONObject font = a.store.data.optJSONObject("font");
+        LinearLayout section = section("字体");
+        LinearLayout body = body(section);
+        body.addView(stepperRow("字号", font.optInt("size", 15), 12, 22, "sp", value -> {
+            try {
+                font.put("size", value);
+                a.store.save();
+                a.onChatChanged(false);
+                refresh();
+            } catch (JSONException ignored) {
+            }
+        }));
+        content.addView(section);
+    }
+
+    private void renderBubbleCard() {
+        JSONObject font = a.store.data.optJSONObject("font");
+        JSONObject theme = a.store.data.optJSONObject("theme");
+        LinearLayout section = section("气泡");
+        LinearLayout body = body(section);
+        body.addView(bubblePreview());
+        body.addView(stepperRow("气泡圆角", font.optInt("radius", 10), 0, 24, "", value -> {
+            try {
+                font.put("radius", value);
+                a.store.save();
+                a.onChatChanged(false);
+                refresh();
+            } catch (JSONException ignored) {
+            }
+        }));
+        body.addView(swatchRow("我的气泡", theme, "myBg", "#95ec69", BUBBLE_SWATCHES));
+        body.addView(swatchRow("我的文字", theme, "myText", "#111", BUBBLE_SWATCHES));
+        body.addView(swatchRow("他的气泡", theme, "hisBg", "#fff", BUBBLE_SWATCHES));
+        body.addView(swatchRow("他的文字", theme, "hisText", "#111", BUBBLE_SWATCHES));
+        content.addView(section);
+    }
+
+    private void renderWallpaperCard() {
+        JSONObject wallpaper = a.store.data.optJSONObject("wallpaper");
+        LinearLayout section = section("聊天壁纸");
+        LinearLayout body = body(section);
+        String current = wallpaper.optString("image", "").isEmpty() ? wallpaper.optString("preset", "默认") : "图片";
+        LinearLayout row = Ui.row(a);
+        row.setPadding(0, Ui.dp(a, 6), 0, Ui.dp(a, 6));
+        String[][] presets = {{"默认", "#F9F5F2", "#F5EFEB"}, {"粉色", "#FFF4F4", "#F8E7EC"},
+                {"蓝色", "#F4F7FB", "#E8F0F4"}, {"绿色", "#F4F8F5", "#E8F1EB"}, {"星空", "#29243C", "#151323"}};
+        for (String[] preset : presets) {
+            boolean on = preset[0].equals(current);
+            LinearLayout tile = Ui.column(a);
+            tile.setGravity(Gravity.CENTER_HORIZONTAL);
+            View swatch = new View(a);
+            android.graphics.drawable.GradientDrawable g = Ui.gradient(
+                    Color.parseColor(preset[1]), Color.parseColor(preset[2]), Ui.dp(a, 10));
+            if (on) g.setStroke(Ui.dp(a, 2), Ui.plum(a, a.store));
+            else g.setStroke(Ui.dp(a, 1), Ui.line(a, a.store));
+            swatch.setBackground(g);
+            tile.addView(swatch, Ui.lp(Ui.dp(a, 44), Ui.dp(a, 64)));
+            TextView label = Ui.text(a, preset[0], 11, on ? Ui.plum(a, a.store) : Ui.mutedInk(a, a.store));
+            label.setPadding(0, Ui.dp(a, 4), 0, 0);
+            tile.addView(label);
+            tile.setOnClickListener(v -> {
+                try {
+                    wallpaper.put("preset", preset[0]).put("image", "");
+                    a.store.save();
+                    rebuildChat();
+                    refresh();
+                } catch (JSONException ignored) {
+                }
+            });
+            LinearLayout.LayoutParams lp = Ui.lp(0, ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.weight = 1;
+            row.addView(tile, lp);
+        }
+        body.addView(row);
+        if (!wallpaper.optString("image", "").isEmpty()) {
+            android.widget.ImageView image = new android.widget.ImageView(a);
+            image.setScaleType(android.widget.ImageView.ScaleType.CENTER_CROP);
+            image.setClipToOutline(true);
+            image.setBackground(Ui.rounded(Ui.line(a, a.store), Ui.dp(a, 12)));
+            Ui.setImage(image, a.store.resolveMedia(wallpaper.optString("image", "")));
+            LinearLayout.LayoutParams lp = Ui.lp(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(a, 120));
+            lp.topMargin = Ui.dp(a, 8);
+            body.addView(image, lp);
+        }
+        body.addView(button("从相册选择壁纸图片", false, () -> a.pickFile("image/*", (bytes, mime, name) -> {
+            String ref = a.store.importImage(bytes, mime);
+            if (ref.isEmpty()) {
+                a.toast("图片导入失败");
+                return;
+            }
+            try {
+                a.store.deleteMedia(wallpaper.optString("image", ""));
+                wallpaper.put("preset", "图片").put("image", ref);
+                a.store.save();
+                rebuildChat();
+                refresh();
+            } catch (JSONException ignored) {
+            }
+        })));
+        if (!wallpaper.optString("image", "").isEmpty()) {
+            body.addView(dangerButton("清除自定义壁纸", () -> {
+                try {
+                    a.store.deleteMedia(wallpaper.optString("image", ""));
+                    wallpaper.put("image", "").put("preset", "默认");
+                    a.store.save();
+                    rebuildChat();
+                    refresh();
+                } catch (JSONException ignored) {
+                }
+            }));
+        }
+        content.addView(section);
+    }
+
+    private void renderBeautyCard() {
         JSONObject beauty = a.store.data.optJSONObject("beauty");
-        body.addView(valueRow("全局美化 · 页面底色", beauty.optString("pageBg", "#f8f3ef"), () ->
-                promptColor(beauty, "pageBg", "页面底色")));
-        body.addView(valueRow("全局美化 · 卡片底色", beauty.optString("surface", "#fffaf7"), () ->
-                promptColor(beauty, "surface", "卡片底色")));
-        body.addView(valueRow("全局美化 · 主题色", beauty.optString("accent", "#6d3b58"), () ->
-                promptColor(beauty, "accent", "主题色")));
+        LinearLayout section = section("全局美化");
+        LinearLayout body = body(section);
+        body.addView(beautyPreview(beauty));
+        body.addView(swatchRow("页面底色", beauty, "pageBg", "#f8f3ef", PAGE_SWATCHES));
+        body.addView(swatchRow("卡片底色", beauty, "surface", "#fffaf7", PAGE_SWATCHES));
+        body.addView(swatchRow("主题色", beauty, "accent", "#6d3b58", ACCENT_SWATCHES));
         TextView reset = Ui.boldText(a, "恢复默认美化", 12, a.getColor(R.color.danger));
         reset.setPadding(0, Ui.dp(a, 8), 0, 0);
         reset.setOnClickListener(v -> {
@@ -462,6 +585,212 @@ public class SettingsPage extends Page {
         });
         body.addView(reset);
         content.addView(section);
+    }
+
+    private void renderBootCard() {
+        JSONObject ui = icepearUi();
+        LinearLayout section = section("开屏动画");
+        LinearLayout body = body(section);
+        String current = ui.optString("bootAnim", "hearts");
+        android.widget.FrameLayout stage = a.bootStage(current, ui.optString("bootImg", ""));
+        stage.setBackground(Ui.rounded(Ui.paper(a, a.store), Ui.dp(a, 14)));
+        stage.setClipToOutline(true);
+        LinearLayout stageWrap = Ui.column(a);
+        stageWrap.setGravity(Gravity.CENTER_HORIZONTAL);
+        stageWrap.addView(stage, Ui.lp(Ui.dp(a, 220), Ui.dp(a, 130)));
+        body.addView(stageWrap);
+        body.addView(hint("上面是实时预览：切换动画会立即播放，自定义图片叠在动画上方"));
+        LinearLayout chips = Ui.row(a);
+        chips.setPadding(0, Ui.dp(a, 8), 0, Ui.dp(a, 4));
+        String[][] anims = {{"hearts", "爱心"}, {"bubbles", "气泡"}, {"stars", "星星"}, {"avatar", "头像"}, {"off", "关闭"}};
+        for (String[] anim : anims) {
+            boolean on = anim[0].equals(current);
+            TextView chip = Ui.boldText(a, anim[1], 12, on ? Color.WHITE : Ui.ink(a, a.store));
+            chip.setBackground(on ? Ui.rounded(Ui.plum(a, a.store), Ui.dp(a, 12))
+                    : Ui.roundedStroke(0x00000000, Ui.dp(a, 12), Ui.line(a, a.store), Ui.dp(a, 1)));
+            chip.setPadding(Ui.dp(a, 10), Ui.dp(a, 6), Ui.dp(a, 10), Ui.dp(a, 6));
+            chip.setGravity(Gravity.CENTER);
+            LinearLayout.LayoutParams lp = Ui.lp(0, ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.weight = 1;
+            lp.rightMargin = Ui.dp(a, 6);
+            chip.setOnClickListener(v -> {
+                try {
+                    ui.put("bootAnim", anim[0]);
+                    a.store.save();
+                    refresh();
+                } catch (JSONException ignored) {
+                }
+            });
+            chips.addView(chip, lp);
+        }
+        body.addView(chips);
+        body.addView(button("选择自定义图片（叠在动画上方）", false, () -> a.pickFile("image/*", (bytes, mime, name) -> {
+            if (bytes.length > 2 * 1024 * 1024) {
+                Dialogs.notice(a, a.store, "!", "图片太大", "请选择2MB以内的图片，否则启动会变慢。");
+                return;
+            }
+            String ref = a.store.importImage(bytes, mime);
+            if (ref.isEmpty()) {
+                a.toast("图片导入失败");
+                return;
+            }
+            try {
+                a.store.deleteMedia(ui.optString("bootImg", ""));
+                ui.put("bootImg", ref);
+                a.store.save();
+                refresh();
+            } catch (JSONException ignored) {
+            }
+        })));
+        if (!ui.optString("bootImg", "").isEmpty()) {
+            body.addView(dangerButton("清除自定义图片", () -> {
+                try {
+                    a.store.deleteMedia(ui.optString("bootImg", ""));
+                    ui.put("bootImg", "");
+                    a.store.save();
+                    refresh();
+                } catch (JSONException ignored) {
+                }
+            }));
+        }
+        content.addView(section);
+    }
+
+    /* ---------- 可视化编辑控件 ---------- */
+
+    private interface OnInt {
+        void run(int value);
+    }
+
+    /** −/+ 步进行，带当前值 */
+    private LinearLayout stepperRow(String label, int value, int min, int max, String unit, OnInt onChange) {
+        LinearLayout row = Ui.row(a);
+        row.setPadding(0, Ui.dp(a, 6), 0, Ui.dp(a, 6));
+        row.addView(Ui.text(a, label, 13, Ui.ink(a, a.store)), Ui.weighted());
+        row.addView(stepButton("−", () -> {
+            if (value > min) onChange.run(value - 1);
+        }));
+        TextView current = Ui.boldText(a, value + unit, 13, Ui.plum(a, a.store));
+        current.setGravity(Gravity.CENTER);
+        current.setMinWidth(Ui.dp(a, 48));
+        row.addView(current);
+        row.addView(stepButton("+", () -> {
+            if (value < max) onChange.run(value + 1);
+        }));
+        return row;
+    }
+
+    private TextView stepButton(String text, Runnable onClick) {
+        TextView b = Ui.boldText(a, text, 16, Ui.ink(a, a.store));
+        b.setGravity(Gravity.CENTER);
+        b.setBackground(Ui.roundedStroke(0x00000000, Ui.dp(a, 10), Ui.line(a, a.store), Ui.dp(a, 1)));
+        b.setLayoutParams(Ui.lp(Ui.dp(a, 34), Ui.dp(a, 30)));
+        b.setOnClickListener(v -> onClick.run());
+        return b;
+    }
+
+    /** 色板行：一排颜色圆点 + 自定义；点选立即生效 */
+    private LinearLayout swatchRow(String label, JSONObject target, String key, String fallback, String[] swatches) {
+        LinearLayout box = Ui.column(a);
+        box.setPadding(0, Ui.dp(a, 6), 0, Ui.dp(a, 4));
+        LinearLayout head = Ui.row(a);
+        head.addView(Ui.text(a, label, 13, Ui.ink(a, a.store)), Ui.weighted());
+        String current = target.optString(key, fallback);
+        head.addView(Ui.boldText(a, current, 12, Ui.plum(a, a.store)));
+        box.addView(head);
+        android.widget.HorizontalScrollView scroll = new android.widget.HorizontalScrollView(a);
+        scroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout row = Ui.row(a);
+        row.setPadding(0, Ui.dp(a, 6), 0, 0);
+        int curColor = Ui.parseColor(current, 0);
+        for (String swatch : swatches) {
+            int color = Ui.parseColor(swatch, 0);
+            View dot = new View(a);
+            boolean on = color == curColor;
+            android.graphics.drawable.GradientDrawable g = Ui.rounded(color, Ui.dp(a, 15));
+            g.setStroke(Ui.dp(a, on ? 3 : 1), on ? Ui.plum(a, a.store) : Ui.line(a, a.store));
+            dot.setBackground(g);
+            LinearLayout.LayoutParams lp = Ui.lp(Ui.dp(a, 30), Ui.dp(a, 30));
+            lp.rightMargin = Ui.dp(a, 8);
+            dot.setOnClickListener(v -> applyColor(target, key, swatch));
+            row.addView(dot, lp);
+        }
+        TextView custom = Ui.boldText(a, "#", 13, Ui.plum(a, a.store));
+        custom.setGravity(Gravity.CENTER);
+        custom.setBackground(Ui.roundedStroke(0x00000000, Ui.dp(a, 15), Ui.plum(a, a.store), Ui.dp(a, 1)));
+        custom.setOnClickListener(v -> promptColor(target, key, label));
+        row.addView(custom, Ui.lp(Ui.dp(a, 30), Ui.dp(a, 30)));
+        scroll.addView(row);
+        box.addView(scroll);
+        return box;
+    }
+
+    private void applyColor(JSONObject target, String key, String color) {
+        try {
+            target.put(key, color);
+            a.store.save();
+            a.applyTheme();
+            a.onChatChanged(false);
+            refresh();
+        } catch (JSONException ignored) {
+        }
+    }
+
+    /** 气泡预览：壁纸底 + 他的一条 + 我的一条 */
+    private View bubblePreview() {
+        JSONObject theme = a.store.data.optJSONObject("theme");
+        JSONObject font = a.store.data.optJSONObject("font");
+        JSONObject wallpaper = a.store.data.optJSONObject("wallpaper");
+        LinearLayout box = Ui.column(a);
+        box.setPadding(Ui.dp(a, 12), Ui.dp(a, 12), Ui.dp(a, 12), Ui.dp(a, 12));
+        int start, end;
+        switch (wallpaper.optString("preset", "默认")) {
+            case "粉色": start = 0xFFFFF4F4; end = 0xFFF8E7EC; break;
+            case "蓝色": start = 0xFFF4F7FB; end = 0xFFE8F0F4; break;
+            case "绿色": start = 0xFFF4F8F5; end = 0xFFE8F1EB; break;
+            case "星空": start = 0xFF29243C; end = 0xFF151323; break;
+            default: start = 0xFFF9F5F2; end = 0xFFF5EFEB;
+        }
+        box.setBackground(Ui.gradient(start, end, Ui.dp(a, 14)));
+        float radius = Ui.dp(a, font.optInt("radius", 10));
+        int size = font.optInt("size", 15);
+        TextView his = Ui.text(a, "今天想你了", size, Ui.parseColor(theme.optString("hisText", "#111"), 0xFF111111));
+        his.setBackground(Ui.rounded(Ui.parseColor(theme.optString("hisBg", "#fff"), 0xFFFFFFFF) | 0xFF000000, radius));
+        his.setPadding(Ui.dp(a, 12), Ui.dp(a, 8), Ui.dp(a, 12), Ui.dp(a, 8));
+        LinearLayout.LayoutParams hisLp = Ui.lp(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        hisLp.gravity = Gravity.START;
+        box.addView(his, hisLp);
+        TextView mine = Ui.text(a, "我也是", size, Ui.parseColor(theme.optString("myText", "#111"), 0xFF111111));
+        mine.setBackground(Ui.rounded(Ui.parseColor(theme.optString("myBg", "#95ec69"), 0xFF95EC69) | 0xFF000000, radius));
+        mine.setPadding(Ui.dp(a, 12), Ui.dp(a, 8), Ui.dp(a, 12), Ui.dp(a, 8));
+        LinearLayout.LayoutParams mineLp = Ui.lp(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        mineLp.gravity = Gravity.END;
+        mineLp.topMargin = Ui.dp(a, 8);
+        box.addView(mine, mineLp);
+        return box;
+    }
+
+    /** 全局美化预览：页面底 + 卡片 + 主题色按钮 */
+    private View beautyPreview(JSONObject beauty) {
+        int page = Ui.parseColor(beauty.optString("pageBg", "#f8f3ef"), 0xFFF8F3EF);
+        int surface = Ui.parseColor(beauty.optString("surface", "#fffaf7"), 0xFFFFFAF7);
+        int accent = Ui.parseColor(beauty.optString("accent", "#6d3b58"), 0xFF6D3B58);
+        LinearLayout box = Ui.column(a);
+        box.setBackground(Ui.rounded(page, Ui.dp(a, 14)));
+        box.setPadding(Ui.dp(a, 12), Ui.dp(a, 12), Ui.dp(a, 12), Ui.dp(a, 12));
+        LinearLayout card = Ui.column(a);
+        card.setBackground(Ui.rounded(surface, Ui.dp(a, 12)));
+        card.setPadding(Ui.dp(a, 12), Ui.dp(a, 10), Ui.dp(a, 12), Ui.dp(a, 10));
+        card.addView(Ui.boldText(a, "卡片标题", 13, accent));
+        card.addView(Ui.text(a, "卡片正文示例", 12, Ui.mutedInk(a, a.store)));
+        TextView btn = Ui.boldText(a, "主题色按钮", 12, Color.WHITE);
+        btn.setBackground(Ui.rounded(accent, Ui.dp(a, 10)));
+        btn.setPadding(Ui.dp(a, 12), Ui.dp(a, 6), Ui.dp(a, 12), Ui.dp(a, 6));
+        LinearLayout.LayoutParams lp = Ui.lp(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.topMargin = Ui.dp(a, 8);
+        card.addView(btn, lp);
+        box.addView(card);
+        return box;
     }
 
     private void promptInt2(JSONObject target, String key, String title, int min, int max) {
@@ -503,45 +832,6 @@ public class SettingsPage extends Page {
         });
     }
 
-    private void pickWallpaper() {
-        Dialogs.Field mode = new Dialogs.Field("mode", "壁纸");
-        mode.optionValues = new String[]{"默认", "粉色", "蓝色", "绿色", "星空", "@image", "@clear"};
-        mode.optionLabels = new String[]{"默认", "粉色", "蓝色", "绿色", "星空", "从相册选择…", "清除自定义图片"};
-        JSONObject wallpaper = a.store.data.optJSONObject("wallpaper");
-        mode.value = wallpaper.optString("preset", "默认");
-        Dialogs.form(a, a.store, "🖼", "聊天壁纸", null, "应用", Dialogs.fields(mode), values -> {
-            String pick = values.get("mode");
-            try {
-                if ("@image".equals(pick)) {
-                    a.pickFile("image/*", (bytes, mime, name) -> {
-                        String ref = a.store.importImage(bytes, mime);
-                        if (ref.isEmpty()) {
-                            a.toast("图片导入失败");
-                            return;
-                        }
-                        try {
-                            wallpaper.put("preset", "图片").put("image", ref);
-                            a.store.save();
-                            rebuildChat();
-                        } catch (JSONException ignored) {
-                        }
-                    });
-                    return;
-                }
-                if ("@clear".equals(pick)) {
-                    a.store.deleteMedia(wallpaper.optString("image", ""));
-                    wallpaper.put("image", "");
-                    if ("图片".equals(wallpaper.optString("preset", ""))) wallpaper.put("preset", "默认");
-                } else {
-                    wallpaper.put("preset", pick).put("image", "");
-                }
-                a.store.save();
-                rebuildChat();
-            } catch (JSONException ignored) {
-            }
-        });
-    }
-
     /* ---------- 开屏动画 ---------- */
 
     private JSONObject icepearUi() {
@@ -554,60 +844,6 @@ public class SettingsPage extends Page {
             }
         }
         return ui;
-    }
-
-    private String bootAnimLabel() {
-        switch (icepearUi().optString("bootAnim", "hearts")) {
-            case "bubbles": return "气泡上升";
-            case "stars": return "星星闪烁";
-            case "avatar": return "头像碰碰";
-            case "off": return "关闭";
-            default: return "爱心飘动";
-        }
-    }
-
-    private void pickBootAnim() {
-        JSONObject ui = icepearUi();
-        Dialogs.Field anim = new Dialogs.Field("anim", "开屏动画");
-        anim.optionValues = new String[]{"hearts", "bubbles", "stars", "avatar", "off", "@image", "@clearImg"};
-        anim.optionLabels = new String[]{"爱心飘动", "气泡上升", "星星闪烁", "头像碰碰", "关闭动画",
-                "选择自定义图片（叠在动画上方）…", "清除自定义图片"};
-        anim.value = ui.optString("bootAnim", "hearts");
-        Dialogs.form(a, a.store, "✧", "开屏动画", "下次启动时生效", "保存", Dialogs.fields(anim), values -> {
-            String pick = values.get("anim");
-            try {
-                if ("@image".equals(pick)) {
-                    a.pickFile("image/*", (bytes, mime, name) -> {
-                        if (bytes.length > 2 * 1024 * 1024) {
-                            Dialogs.notice(a, a.store, "!", "图片太大", "请选择2MB以内的图片，否则启动会变慢。");
-                            return;
-                        }
-                        String ref = a.store.importImage(bytes, mime);
-                        if (ref.isEmpty()) {
-                            a.toast("图片导入失败");
-                            return;
-                        }
-                        try {
-                            a.store.deleteMedia(ui.optString("bootImg", ""));
-                            ui.put("bootImg", ref);
-                            a.store.save();
-                            a.toast("图片已设置，会叠在开屏动画上方显示");
-                        } catch (JSONException ignored) {
-                        }
-                    });
-                    return;
-                }
-                if ("@clearImg".equals(pick)) {
-                    a.store.deleteMedia(ui.optString("bootImg", ""));
-                    ui.put("bootImg", "");
-                } else {
-                    ui.put("bootAnim", pick);
-                }
-                a.store.save();
-                refresh();
-            } catch (JSONException ignored) {
-            }
-        });
     }
 
     /* ---------- 视频通话背景 ---------- */
@@ -778,34 +1014,110 @@ public class SettingsPage extends Page {
         });
     }
 
-    /* ---------- 钱包 ---------- */
+    /* ---------- 数据 ---------- */
 
-    private void renderWalletCard(JSONObject role) {
-        JSONObject wallet = role.optJSONObject("wallet");
-        LinearLayout section = section("钱包");
+    /* ---------- 永久补丁 ---------- */
+
+    private JSONArray patches() {
+        JSONArray list = a.store.data.optJSONArray("patchLog");
+        if (list == null) {
+            list = new JSONArray();
+            try {
+                a.store.data.put("patchLog", list);
+            } catch (JSONException ignored) {
+            }
+        }
+        return list;
+    }
+
+    private void renderPatchCard() {
+        JSONArray list = patches();
+        LinearLayout section = section("永久补丁");
         LinearLayout body = body(section);
-        body.addView(valueRow("我的余额", "¥" + Ui.fmtMoney(wallet.optDouble("mine", 0)), () ->
-                promptMoney(wallet, "mine", "我的余额")));
-        body.addView(valueRow("他的余额", "¥" + Ui.fmtMoney(wallet.optDouble("his", 0)), () ->
-                promptMoney(wallet, "his", "他的余额")));
+        if (list.length() == 0) body.addView(hint("暂无永久补丁"));
+        java.text.SimpleDateFormat fmt = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.CHINA);
+        for (int i = 0; i < list.length(); i++) {
+            final int index = i;
+            JSONObject patch = list.optJSONObject(i);
+            if (patch == null) continue;
+            boolean on = patch.optBoolean("on", true);
+            LinearLayout row = Ui.row(a);
+            row.setPadding(0, Ui.dp(a, 6), 0, Ui.dp(a, 6));
+            LinearLayout info = Ui.column(a);
+            info.addView(Ui.boldText(a, "#" + (i + 1) + " · " + patch.optString("name", "补丁 #" + (i + 1)),
+                    13, on ? Ui.ink(a, a.store) : Ui.faintInk(a, a.store)));
+            info.addView(Ui.text(a, (on ? "已启用" : "已停用") + " · " + patch.optString("cat", "其他")
+                    + " · " + fmt.format(new java.util.Date(patch.optLong("t"))), 11, Ui.faintInk(a, a.store)));
+            row.addView(info, Ui.weighted());
+            TextView toggle = Ui.boldText(a, on ? "停用" : "启用", 12, Ui.plum(a, a.store));
+            toggle.setOnClickListener(v -> {
+                try {
+                    patch.put("on", !on);
+                    a.store.save();
+                    refresh();
+                } catch (JSONException ignored) {
+                }
+            });
+            row.addView(toggle);
+            TextView edit = Ui.boldText(a, "编辑", 12, Ui.plum(a, a.store));
+            edit.setPadding(Ui.dp(a, 12), 0, 0, 0);
+            edit.setOnClickListener(v -> editPatch(patch));
+            row.addView(edit);
+            TextView copy = Ui.boldText(a, "复制", 12, Ui.plum(a, a.store));
+            copy.setPadding(Ui.dp(a, 12), 0, 0, 0);
+            copy.setOnClickListener(v -> {
+                android.content.ClipboardManager cm =
+                        (android.content.ClipboardManager) a.getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+                cm.setPrimaryClip(android.content.ClipData.newPlainText("patch", patch.optString("code", "")));
+                a.toast("已复制");
+            });
+            row.addView(copy);
+            row.addView(trashButton("删除补丁“" + patch.optString("name", "") + "”？", () -> {
+                list.remove(index);
+                a.store.save();
+                refresh();
+            }));
+            body.addView(row);
+        }
+        body.addView(button("＋ 添加补丁", true, () -> editPatch(null)));
+        body.addView(hint("原生版不会执行脚本，补丁只作为内容记录保存（名称 / 板块 / 内容），可停用、复制、删除"));
         content.addView(section);
     }
 
-    private void promptMoney(JSONObject wallet, String key, String title) {
-        Dialogs.prompt(a, a.store, "¥", title, "金额", "0.00",
-                Ui.fmtMoney(wallet.optDouble(key, 0)), value -> {
+    private void editPatch(JSONObject existing) {
+        Dialogs.Field name = new Dialogs.Field("name", "补丁名称");
+        name.value = existing != null ? existing.optString("name", "") : "补丁 #" + (patches().length() + 1);
+        Dialogs.Field cat = new Dialogs.Field("cat", "所属板块");
+        cat.value = existing != null ? existing.optString("cat", "其他") : "其他";
+        Dialogs.Field code = new Dialogs.Field("code", "补丁内容");
+        code.textarea = true;
+        code.value = existing != null ? existing.optString("code", "") : "";
+        Dialogs.form(a, a.store, "{ }", existing != null ? "修改补丁" : "添加补丁", null, "保存",
+                Dialogs.fields(name, cat, code), values -> {
                     try {
-                        double parsed = Double.parseDouble(value.trim());
-                        wallet.put(key, Math.round(parsed * 100) / 100.0);
+                        JSONObject target = existing != null ? existing : new JSONObject()
+                                .put("t", System.currentTimeMillis()).put("on", true);
+                        target.put("name", values.getOrDefault("name", "").trim())
+                                .put("cat", values.getOrDefault("cat", "").trim().isEmpty()
+                                        ? "其他" : values.getOrDefault("cat", "").trim())
+                                .put("code", values.getOrDefault("code", ""));
+                        if (existing == null) patches().put(target);
                         a.store.save();
                         refresh();
-                    } catch (Exception e) {
-                        a.toast("金额无效");
+                    } catch (JSONException ignored) {
                     }
                 });
     }
 
-    /* ---------- 数据 ---------- */
+    /* ---------- 历史版本 ---------- */
+
+    private void renderSnapshotCard() {
+        LinearLayout section = section("历史版本");
+        LinearLayout body = body(section);
+        body.addView(button("🕘 保存数据快照", false, this::saveSnapshot));
+        renderSnapshots(body);
+        content.addView(section);
+    }
 
     private void renderDataCard() {
         LinearLayout section = section("数据");
@@ -813,8 +1125,6 @@ public class SettingsPage extends Page {
         body.addView(button("⬇ 备份全部数据（JSON）", false, this::exportBackup));
         body.addView(button("⬆ 从备份恢复", false, this::importBackup));
         body.addView(button("📄 导出聊天记录（文本）", false, this::exportChat));
-        body.addView(button("🕘 保存数据快照", false, this::saveSnapshot));
-        renderSnapshots(body);
         body.addView(dangerButton("清空当前角色聊天记录", this::clearChat));
         body.addView(dangerButton("重置全部数据", () ->
                 Dialogs.confirm(a, a.store, "⚠", "重置全部数据？", "所有角色、聊天、设置都会被清空",

@@ -350,31 +350,10 @@ public class MainActivity extends Activity implements ChatLogic.Host {
         LinearLayout center = Ui.column(this);
         center.setGravity(Gravity.CENTER_HORIZONTAL);
 
-        FrameLayout stage = new FrameLayout(this);
+        FrameLayout stage = bootStage(anim, icepearUi != null ? icepearUi.optString("bootImg", "") : "");
         LinearLayout.LayoutParams stageLp = Ui.lp(Ui.dp(this, 220), Ui.dp(this, 130));
         stageLp.gravity = Gravity.CENTER_HORIZONTAL;
         stage.setLayoutParams(stageLp);
-        stage.setClipChildren(true);
-        renderBootAnim(anim, stage);
-        String bootImg = icepearUi != null ? store.resolveMedia(icepearUi.optString("bootImg", "")) : "";
-        if (!bootImg.isEmpty()) {
-            android.graphics.Bitmap bitmap = Ui.decodeDataUrl(bootImg);
-            if (bitmap != null) {
-                android.widget.ImageView image = new android.widget.ImageView(this);
-                image.setImageBitmap(bitmap);
-                image.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
-                image.setAdjustViewBounds(true);
-                image.setClipToOutline(true);
-                image.setBackground(Ui.rounded(0x00000000, Ui.dp(this, 12)));
-                int maxW = Ui.dp(this, 200);
-                int maxH = Ui.dp(this, 110);
-                float scale = Math.min(maxW / (float) bitmap.getWidth(), maxH / (float) bitmap.getHeight());
-                int w = Math.max(1, Math.round(bitmap.getWidth() * scale));
-                int h = Math.max(1, Math.round(bitmap.getHeight() * scale));
-                FrameLayout.LayoutParams imgLp = new FrameLayout.LayoutParams(w, h, Gravity.CENTER);
-                stage.addView(image, imgLp);
-            }
-        }
         center.addView(stage);
 
         TextView logo = Ui.boldText(this, "Icepear", 34, Ui.plum(this, store));
@@ -408,6 +387,33 @@ public class MainActivity extends Activity implements ChatLogic.Host {
                 return true;
             }
         });
+    }
+
+    /** 开屏动画舞台（220x130dp）：动画 + 叠在上方的自定义图片，设置页预览也用它 */
+    public FrameLayout bootStage(String anim, String bootImgRef) {
+        FrameLayout stage = new FrameLayout(this);
+        stage.setClipChildren(true);
+        if (!"off".equals(anim)) renderBootAnim(anim, stage);
+        String bootImg = store.resolveMedia(bootImgRef == null ? "" : bootImgRef);
+        if (!bootImg.isEmpty()) {
+            android.graphics.Bitmap bitmap = Ui.decodeDataUrl(bootImg);
+            if (bitmap != null) {
+                android.widget.ImageView image = new android.widget.ImageView(this);
+                image.setImageBitmap(bitmap);
+                image.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+                image.setAdjustViewBounds(true);
+                image.setClipToOutline(true);
+                image.setBackground(Ui.rounded(0x00000000, Ui.dp(this, 12)));
+                int maxW = Ui.dp(this, 200);
+                int maxH = Ui.dp(this, 110);
+                float scale = Math.min(maxW / (float) bitmap.getWidth(), maxH / (float) bitmap.getHeight());
+                int w = Math.max(1, Math.round(bitmap.getWidth() * scale));
+                int h = Math.max(1, Math.round(bitmap.getHeight() * scale));
+                FrameLayout.LayoutParams imgLp = new FrameLayout.LayoutParams(w, h, Gravity.CENTER);
+                stage.addView(image, imgLp);
+            }
+        }
+        return stage;
     }
 
     /** 四种开屏动画：爱心飘动 / 气泡上升 / 星星闪烁 / 头像碰碰 */

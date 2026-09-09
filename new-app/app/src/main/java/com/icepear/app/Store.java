@@ -322,6 +322,22 @@ public final class Store {
         }
     }
 
+    /* ---------- 撤回后他会追问：文案池 ---------- */
+
+    public static final String[] DEFAULT_RECALL = {"刚刚撤回了什么呀？", "让我看看你撤回了什么", "撤回也来不及啦，我看到了"};
+
+    public JSONArray recallPool() {
+        JSONArray pool = data.optJSONArray("recallPool");
+        if (pool == null) {
+            pool = jsonArray(DEFAULT_RECALL);
+            try {
+                data.put("recallPool", pool);
+            } catch (JSONException ignored) {
+            }
+        }
+        return pool;
+    }
+
     /* ---------- 购物车（按角色） ---------- */
 
     public JSONArray cart() {

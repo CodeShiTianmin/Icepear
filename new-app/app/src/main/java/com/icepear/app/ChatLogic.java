@@ -348,6 +348,12 @@ public final class ChatLogic {
                 return;
             }
             String type = kind == 3 ? "red" : kind == 5 ? "zhuan" : "gift";
+            JSONObject sim = store.data.optJSONObject("sim");
+            int txRate = sim != null ? sim.optInt("txRate", 20) : 20;
+            if (store.rand(1, 100) > txRate) {
+                cardFallback();
+                return;
+            }
             JSONObject wallet = role.getJSONObject("wallet");
             double his = wallet.optDouble("his", 0);
             if (his <= 0) {
@@ -395,8 +401,29 @@ public final class ChatLogic {
     }
 
     private void cardFallback() {
+        if (maybeRecallMemory()) return;
         List<String> pool = composeReplies(1);
         if (!pool.isEmpty()) addText("other", pool.get(0));
+    }
+
+    /** 他说过的回忆：从他自己历史文字消息里重提一句 */
+    private boolean maybeRecallMemory() {
+        JSONObject sim = store.data.optJSONObject("sim");
+        if (sim == null || !sim.optBoolean("memory", false) || Math.random() >= 0.25) return false;
+        JSONArray chat = store.chat();
+        List<String> said = new ArrayList<>();
+        for (int i = 0; i < chat.length(); i++) {
+            JSONObject msg = chat.optJSONObject(i);
+            if (msg == null || !"other".equals(msg.optString("side")) || msg.optBoolean("recall", false)) continue;
+            if (!msg.optString("type", "").isEmpty()) continue;
+            String text = msg.optString("text", "").trim();
+            if (text.length() >= 4 && !text.startsWith("还记得我说过")) said.add(text);
+        }
+        if (said.size() < 3) return false;
+        String pick = said.get(store.rand(0, Math.max(0, said.size() - 2)));
+        addText("other", new String[]{"还记得我说过“", "之前跟你说过“", "我一直记着“"}[store.rand(0, 2)]
+                + pick + "”" + new String[]{"，现在也是。", "，没忘吧？", "。"}[store.rand(0, 2)]);
+        return true;
     }
 
     /* ---------- 生物钟状态轮换 ---------- */
@@ -440,9 +467,10 @@ public final class ChatLogic {
             host.onChatChanged(false);
             JSONObject sim = store.data.optJSONObject("sim");
             if (sim != null && sim.optBoolean("recallReact", false) && "me".equals(msg.optString("side"))) {
-                handler.postDelayed(() -> addText("other",
-                        new String[]{"刚刚撤回了什么呀？", "让我看看你撤回了什么", "撤回也来不及啦，我看到了"}
-                                [store.rand(0, 2)]), store.rand(2000, 6000));
+                JSONArray pool = store.recallPool();
+                final String text = pool.length() > 0 ? pool.optString(store.rand(0, pool.length() - 1))
+                        : Store.DEFAULT_RECALL[store.rand(0, Store.DEFAULT_RECALL.length - 1)];
+                handler.postDelayed(() -> addText("other", text), store.rand(2000, 6000));
             }
         } catch (JSONException ignored) {
         }
