@@ -39,6 +39,8 @@ public class ChatPage extends Page {
     private EditText textInput;
     private LinearLayout quoteBar;
     private TextView quoteText;
+    private LinearLayout offerBar;
+    private TextView offerText;
     private TextView typingView;
     private TextView statusView;
     private TextView nameView;
@@ -159,6 +161,35 @@ public class ChatPage extends Page {
         quoteBar.addView(clearQuote);
         quoteBar.setVisibility(View.GONE);
         page.addView(quoteBar);
+
+        /* 搜索跳转后的“引用这条”提示栏 */
+        offerBar = Ui.row(a);
+        offerBar.setGravity(Gravity.CENTER_VERTICAL);
+        offerBar.setBackgroundColor(Ui.surface(a, a.store));
+        offerBar.setPadding(Ui.dp(a, 12), Ui.dp(a, 6), Ui.dp(a, 12), Ui.dp(a, 6));
+        offerText = Ui.text(a, "", 12, Ui.mutedInk(a, a.store));
+        offerText.setSingleLine(true);
+        offerBar.addView(offerText, Ui.weighted());
+        TextView offerQuote = Ui.boldText(a, "引用", 13, Ui.plum(a, a.store));
+        offerQuote.setPadding(Ui.dp(a, 12), 0, Ui.dp(a, 6), 0);
+        offerQuote.setOnClickListener(v -> {
+            if (offerRef != null) setQuote(offerTarget, offerRef);
+            hideOffer();
+        });
+        offerBar.addView(offerQuote);
+        TextView offerBack = Ui.boldText(a, "返回搜索", 13, Ui.mutedInk(a, a.store));
+        offerBack.setPadding(Ui.dp(a, 8), 0, Ui.dp(a, 6), 0);
+        offerBack.setOnClickListener(v -> {
+            hideOffer();
+            a.goPage("pageSearch", true);
+        });
+        offerBar.addView(offerBack);
+        TextView offerClose = Ui.boldText(a, "×", 18, Ui.mutedInk(a, a.store));
+        offerClose.setPadding(Ui.dp(a, 8), 0, 0, 0);
+        offerClose.setOnClickListener(v -> hideOffer());
+        offerBar.addView(offerClose);
+        offerBar.setVisibility(View.GONE);
+        page.addView(offerBar);
 
         /* 输入栏：加号 / 输入框 / 表情 / 发送 */
         LinearLayout input = Ui.row(a);
@@ -689,9 +720,47 @@ public class ChatPage extends Page {
         });
     }
 
-    /** 从搜索页跳转：定位消息，并允许直接引用 */
+    private String offerTarget;
+    private String offerRef;
+
+    /** 从搜索页跳转：定位消息，并在输入栏上方提供“引用 / 返回搜索” */
     public void jumpAndOfferQuote(String ref) {
+        JSONArray chat = a.store.chat();
+        JSONObject found = null;
+        for (int i = 0; i < chat.length(); i++) {
+            JSONObject msg = chat.optJSONObject(i);
+            if (msg != null && ref.equals(msg.optString("id"))) {
+                found = msg;
+                break;
+            }
+        }
         jumpToMessage(ref);
+        if (found == null || offerBar == null) return;
+        offerTarget = describeQuote(found);
+        offerRef = ref;
+        offerText.setText("已定位：" + offerTarget);
+        offerBar.setVisibility(View.VISIBLE);
+    }
+
+    private void hideOffer() {
+        offerRef = null;
+        offerTarget = null;
+        if (offerBar != null) offerBar.setVisibility(View.GONE);
+    }
+
+    private String describeQuote(JSONObject msg) {
+        String text = msg.optString("text", "");
+        if (!text.isEmpty()) return text;
+        switch (msg.optString("type", "")) {
+            case "img": return "[图片]";
+            case "video": return "[视频]";
+            case "voice": return "[语音]";
+            case "loc": return "[位置]";
+            case "red": return "[红包]";
+            case "zhuan": return "[转账]";
+            case "gift": return "[礼物]";
+            default: return "[消息]";
+        }
     }
 
     /* ---------- 拍一拍 ---------- */
@@ -705,9 +774,9 @@ public class ChatPage extends Page {
             JSONArray pokes = role != null ? role.optJSONArray("pokes") : null;
             String poke = pokes != null && pokes.length() > 0 ? pokes.optString(0) : "拍了拍他的头";
             if ("me".equals(side)) {
-                a.logic.addSys("你" + poke.replace("他", "自己"));
+                a.logic.addSys(a.logic.pokeText("me", "自己", poke));
             } else {
-                a.logic.addSys("你" + poke.replace("他", a.store.displayName()));
+                a.logic.sendPoke("me", poke);
                 a.logic.scheduleReply();
             }
         } else {
@@ -727,6 +796,7 @@ public class ChatPage extends Page {
                 msg.put("quote", quoteTarget).put("quoteRef", quoteRef);
             }
             clearQuote();
+            hideOffer();
             a.logic.addMsg("me", msg);
         } catch (JSONException ignored) {
         }
@@ -896,7 +966,7 @@ public class ChatPage extends Page {
     }
 
     private void sendPoke(String poke) {
-        a.logic.addSys("你" + poke.replace("他", a.store.displayName()));
+        a.logic.sendPoke("me", poke);
         a.logic.scheduleReply();
     }
 
