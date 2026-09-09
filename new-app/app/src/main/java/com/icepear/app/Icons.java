@@ -15,7 +15,7 @@ public final class Icons {
 
     /* 底部导航 */
     public static final String NAV_CHAT = O + "<path d=\"M5 17.5 3.5 21l4.2-1.6A9 9 0 1 0 5 17.5Z\"/><path d=\"M8 11.5h8M8 8.5h5\"/>" + E;
-    public static final String NAV_MOMENTS = O + "<rect x=\"3\" y=\"3\" width=\"18\" height=\"18\" rx=\"5\"/><circle cx=\"8.5\" cy=\"8.5\" r=\"1.5\"/><path d=\"m4 17 5-5 3 3 3-3 5 5\"/>" + E;
+    public static final String NAV_MOMENTS = O + "<circle cx=\"12\" cy=\"12\" r=\"4\"/><path d=\"M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8\"/>" + E;
     public static final String NAV_MENU = O + "<path d=\"M12 3 9.5 9.5 3 12l6.5 2.5L12 21l2.5-6.5L21 12l-6.5-2.5Z\"/>" + E;
     public static final String NAV_LETTER = O + "<path d=\"M4 5h16v14H4z\"/><path d=\"m4 7 8 6 8-6\"/>" + E;
     public static final String NAV_SET = O + "<circle cx=\"12\" cy=\"8\" r=\"4\"/><path d=\"M4.5 21a7.5 7.5 0 0 1 15 0\"/>" + E;
@@ -78,6 +78,14 @@ public final class Icons {
     public static final String CLOCK = O + "<circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M12 7v5l3 2\"/>" + E;
     public static final String PHONE_OFF = O + "<path d=\"M5 4c1 6 6 11 12 12l3-3-3-3-3 2a10 10 0 0 1-5-5l2-3-3-3Z\"/>" + E;
     public static final String MINIMIZE = O + "<path d=\"M4 14h6v6\"/><path d=\"m10 14-6 6\"/><path d=\"M20 10h-6V4\"/><path d=\"m14 10 6-6\"/>" + E;
+    public static final String SORT = O + "<path d=\"M8 4v16M8 20l-3-3M8 20l3-3\"/><path d=\"M16 20V4M16 4l-3 3M16 4l3 3\"/>" + E;
+    public static final String GRID = O + "<rect x=\"4\" y=\"4\" width=\"7\" height=\"7\" rx=\"1.5\"/><rect x=\"13\" y=\"4\" width=\"7\" height=\"7\" rx=\"1.5\"/><rect x=\"4\" y=\"13\" width=\"7\" height=\"7\" rx=\"1.5\"/><rect x=\"13\" y=\"13\" width=\"7\" height=\"7\" rx=\"1.5\"/>" + E;
+    public static final String LIST = O2 + "<path d=\"M4 7h16M4 12h16M4 17h10\"/>" + E;
+    public static final String DOWNLOAD = O + "<path d=\"M12 4v11\"/><path d=\"m7 10 5 5 5-5\"/><path d=\"M4 19h16\"/>" + E;
+    public static final String SAVE = O + "<path d=\"M5 4h11l3 3v13H5Z\"/><path d=\"M8 4v5h7V4\"/><rect x=\"8\" y=\"13\" width=\"8\" height=\"5\"/>" + E;
+    public static final String REFRESH = O + "<path d=\"M20 12a8 8 0 1 1-2.3-5.7\"/><path d=\"M20 4v5h-5\"/>" + E;
+    public static final String EYE_OFF = O + "<path d=\"M3 3l18 18\"/><path d=\"M10.6 10.6a2 2 0 0 0 2.8 2.8\"/><path d=\"M9.4 5.6A10 10 0 0 1 12 5c5 0 9 4 10 7a11 11 0 0 1-2.6 3.7M6.6 6.6A11 11 0 0 0 2 12c1 3 5 7 10 7 1.5 0 2.9-.3 4.1-.9\"/>" + E;
+    public static final String EYE = O + "<path d=\"M2 12c1-3 5-7 10-7s9 4 10 7c-1 3-5 7-10 7S3 15 2 12Z\"/><circle cx=\"12\" cy=\"12\" r=\"3\"/>" + E;
     public static final String IMAGE_BG = O + "<rect x=\"3\" y=\"3\" width=\"18\" height=\"18\" rx=\"3\"/><circle cx=\"8.5\" cy=\"8.5\" r=\"1.5\"/><path d=\"m4 17 5-5 3 3 3-3 5 5\"/>" + E;
 
     /* 他的日常（p11） */

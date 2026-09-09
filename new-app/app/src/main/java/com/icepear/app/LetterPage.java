@@ -1,7 +1,8 @@
 package com.icepear.app;
 
+import android.app.Dialog;
+import android.view.Gravity;
 import android.view.View;
-import android.view.ViewGroup;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -9,14 +10,19 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 信箱：写信（草稿/寄出）、他的自动回信与主动来信、读信、删信、纪念日。
+ * 信箱：写信（草稿/寄出）、他的回信、往来记录翻页、回信、删信。
+ * 信件通过 id / replyTo 串成链：A -> B -> C -> D。列表只显示链的起点（根信），
+ * 点开后按页依次翻看 B、C、D。两个分组（我的信 / 他的回信）可折叠。
  */
 public class LetterPage extends Page {
 
     private LinearLayout content;
+    private boolean mineOpen = true;
+    private boolean hisOpen = true;
 
     public LetterPage(MainActivity activity) {
         super(activity);
@@ -34,105 +40,110 @@ public class LetterPage extends Page {
         content.removeAllViews();
         JSONObject role = a.store.role();
         if (role == null) return;
+        ensureIds(role.optJSONArray("letters"));
 
         content.addView(button("✉ 写一封信", true, this::newLetter));
 
-        LinearLayout listCard = card("往来信件");
         JSONArray letters = role.optJSONArray("letters");
-        boolean any = false;
+        List<Integer> mineRoots = new ArrayList<>();
+        List<Integer> hisRoots = new ArrayList<>();
         for (int i = (letters != null ? letters.length() : 0) - 1; i >= 0; i--) {
             JSONObject letter = letters.optJSONObject(i);
             if (letter == null) continue;
-            any = true;
-            final int index = i;
-            LinearLayout row = Ui.row(a);
-            row.setPadding(0, Ui.dp(a, 8), 0, Ui.dp(a, 8));
-            LinearLayout copy = Ui.column(a);
-            boolean mine = letter.optBoolean("mine", true);
-            String status = letter.optString("status", "sent");
-            String badge = mine ? ("draft".equals(status) ? "草稿" : "已寄出") : "他的来信";
-            copy.addView(Ui.boldText(a, letter.optString("title", "无标题"), 14, Ui.ink(a, a.store)));
-            copy.addView(Ui.text(a, badge + " · " + letter.optString("date", ""), 11, Ui.faintInk(a, a.store)));
-            row.addView(copy, Ui.weighted());
-            row.setOnClickListener(v -> openLetter(index));
-            row.setOnLongClickListener(v -> {
-                deleteLetter(index);
-                return true;
-            });
-            listCard.addView(row);
+            if (isRoot(letters, letter)) {
+                if (letter.optBoolean("mine", true)) mineRoots.add(i);
+                else hisRoots.add(i);
+            }
         }
-        if (!any) listCard.addView(hint("还没有信件，写下第一封吧。"));
-        listCard.addView(hint("点击查看，长按删除"));
-        content.addView(listCard);
 
-        /* 纪念日 */
-        LinearLayout memoCard = card("纪念日");
-        JSONArray memos = a.store.data.optJSONArray("memos");
-        for (int i = 0; memos != null && i < memos.length(); i++) {
-            final int index = i;
-            JSONObject memo = memos.optJSONObject(i);
-            if (memo == null) continue;
-            LinearLayout row = Ui.row(a);
-            row.setPadding(0, Ui.dp(a, 8), 0, Ui.dp(a, 8));
-            LinearLayout copy = Ui.column(a);
-            copy.addView(Ui.boldText(a, memo.optString("name"), 14, Ui.ink(a, a.store)));
-            copy.addView(Ui.text(a, memoDays(memo), 12, Ui.plum(a, a.store)));
-            row.addView(copy, Ui.weighted());
-            TextView del = Ui.boldText(a, "删除", 12, a.getColor(R.color.danger));
-            del.setOnClickListener(v -> Dialogs.confirm(a, a.store, "⌫", "删除这个纪念日？", null,
-                    "删除", true, () -> {
-                        memos.remove(index);
-                        a.store.save();
-                        refresh();
-                    }));
-            row.addView(del);
-            memoCard.addView(row);
-        }
-        if (memos == null || memos.length() == 0) memoCard.addView(hint("暂无纪念日"));
-        content.addView(memoCard);
-        content.addView(button("◇ 添加纪念日", false, this::addMemo));
+        LinearLayout mineCard = section("我的信", null, mineOpen, open -> mineOpen = open);
+        LinearLayout mineBody = sectionBody(mineCard);
+        for (int index : mineRoots) mineBody.addView(threadRow(letters, index));
+        if (mineRoots.isEmpty()) mineBody.addView(hint("还没有信件，写下第一封吧。"));
+        content.addView(mineCard);
+
+        LinearLayout hisCard = section("他的来信", null, hisOpen, open -> hisOpen = open);
+        LinearLayout hisBody = sectionBody(hisCard);
+        for (int index : hisRoots) hisBody.addView(threadRow(letters, index));
+        if (hisRoots.isEmpty()) hisBody.addView(hint("他还没有主动写信给你。"));
+        content.addView(hisCard);
     }
 
-    private String memoDays(JSONObject memo) {
-        try {
-            java.text.SimpleDateFormat fmt = new java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US);
-            long target = fmt.parse(memo.optString("date")).getTime();
-            long days = (System.currentTimeMillis() - target) / 86400000L;
-            if ("countdown".equals(memo.optString("type"))) {
-                long remain = -days;
-                return remain >= 0 ? "还有 " + remain + " 天" : "已过去 " + days + " 天";
-            }
-            return "已经 " + Math.max(0, days) + " 天";
-        } catch (Exception e) {
-            return memo.optString("date");
-        }
+    private View threadRow(JSONArray letters, int index) {
+        JSONObject letter = letters.optJSONObject(index);
+        List<Integer> chain = chain(letters, index);
+        LinearLayout row = Ui.row(a);
+        row.setPadding(0, Ui.dp(a, 8), 0, Ui.dp(a, 8));
+        View icon = SvgIcon.view(a, Icons.MAIL, Ui.plum(a, a.store), 20);
+        icon.setBackground(Ui.rounded(Ui.surfaceStrong(a, a.store), Ui.dp(a, 12)));
+        icon.setPadding(Ui.dp(a, 8), Ui.dp(a, 8), Ui.dp(a, 8), Ui.dp(a, 8));
+        row.addView(icon);
+        LinearLayout copy = Ui.column(a);
+        copy.setPadding(Ui.dp(a, 10), 0, Ui.dp(a, 6), 0);
+        boolean mine = letter.optBoolean("mine", true);
+        String status = letter.optString("status", "sent");
+        String badge = mine ? ("draft".equals(status) ? "草稿" : (chain.size() > 1 ? "已收到回信" : "已寄出")) : "他的来信";
+        copy.addView(Ui.boldText(a, letter.optString("title", "无标题"), 14, Ui.ink(a, a.store)));
+        copy.addView(Ui.text(a, badge + " · " + letter.optString("date", "")
+                + (chain.size() > 1 ? " · 共 " + chain.size() + " 页" : ""), 11, Ui.faintInk(a, a.store)));
+        row.addView(copy, Ui.weighted());
+        row.addView(trashButton("删除这封信及其往来回信？删除后无法恢复。", () -> deleteThread(index)));
+        row.setOnClickListener(v -> openThread(index, 0));
+        return row;
     }
 
-    private void addMemo() {
-        Dialogs.Field name = new Dialogs.Field("name", "纪念日名称");
-        name.placeholder = "例如：第一次见面";
-        Dialogs.Field date = new Dialogs.Field("date", "日期");
-        date.date = true;
-        Dialogs.Field type = new Dialogs.Field("type", "计时方式");
-        type.optionValues = new String[]{"countup", "countdown"};
-        type.optionLabels = new String[]{"从这天开始累计", "倒数到这一天"};
-        type.value = "countup";
-        Dialogs.form(a, a.store, "◇", "添加纪念日", null, "保存", Dialogs.fields(name, date, type), values -> {
-            if (values.getOrDefault("name", "").trim().isEmpty()
-                    || values.getOrDefault("date", "").trim().isEmpty()) {
-                Dialogs.notice(a, a.store, "!", "内容不完整", "请填写名称和日期。");
-                return;
+    /* ---------- 链 ---------- */
+
+    private void ensureIds(JSONArray letters) {
+        if (letters == null) return;
+        boolean changed = false;
+        for (int i = 0; i < letters.length(); i++) {
+            JSONObject letter = letters.optJSONObject(i);
+            if (letter != null && !letter.has("id")) {
+                try {
+                    letter.put("id", Store.uid("lt"));
+                    changed = true;
+                } catch (JSONException ignored) {
+                }
             }
-            try {
-                a.store.data.optJSONArray("memos").put(new JSONObject()
-                        .put("name", values.get("name").trim())
-                        .put("date", values.get("date").trim())
-                        .put("type", values.get("type")).put("bg", ""));
-                a.store.save();
-                refresh();
-            } catch (JSONException ignored) {
+        }
+        if (changed) a.store.save();
+    }
+
+    private int indexOfId(JSONArray letters, String id) {
+        if (id == null || id.isEmpty()) return -1;
+        for (int i = 0; i < letters.length(); i++) {
+            JSONObject letter = letters.optJSONObject(i);
+            if (letter != null && id.equals(letter.optString("id"))) return i;
+        }
+        return -1;
+    }
+
+    private boolean isRoot(JSONArray letters, JSONObject letter) {
+        String parent = letter.optString("replyTo", "");
+        return parent.isEmpty() || indexOfId(letters, parent) < 0;
+    }
+
+    /** 从根信开始按回复顺序排出的链（A, B, C, D…） */
+    private List<Integer> chain(JSONArray letters, int rootIndex) {
+        List<Integer> chain = new ArrayList<>();
+        int current = rootIndex;
+        int guard = 0;
+        while (current >= 0 && guard++ < 500) {
+            chain.add(current);
+            JSONObject node = letters.optJSONObject(current);
+            String id = node != null ? node.optString("id") : "";
+            int next = -1;
+            for (int i = 0; i < letters.length(); i++) {
+                JSONObject candidate = letters.optJSONObject(i);
+                if (candidate != null && id.equals(candidate.optString("replyTo", "\u0000")) && !chain.contains(i)) {
+                    next = i;
+                    break;
+                }
             }
-        });
+            current = next;
+        }
+        return chain;
     }
 
     /* ---------- 写信 / 读信 ---------- */
@@ -143,7 +154,7 @@ public class LetterPage extends Page {
         Dialogs.Field body = new Dialogs.Field("content", "信的内容");
         body.textarea = true;
         body.placeholder = "把想说的话写在这里…";
-        Dialogs.form(a, a.store, "✉", "写一封信", "可以先保存成草稿，之后再寄出。", "保存草稿",
+        Dialogs.form(a, a.store, Icons.MAIL, "写一封信", "可以先保存成草稿，之后再寄出。", "保存草稿",
                 Dialogs.fields(title, body), values -> {
                     if (values.getOrDefault("title", "").trim().isEmpty()
                             || values.getOrDefault("content", "").trim().isEmpty()) {
@@ -152,11 +163,11 @@ public class LetterPage extends Page {
                     }
                     try {
                         a.store.role().getJSONArray("letters").put(new JSONObject()
+                                .put("id", Store.uid("lt"))
                                 .put("mine", true)
                                 .put("title", values.get("title").trim())
                                 .put("content", values.get("content").trim())
-                                .put("date", new java.text.SimpleDateFormat("yyyy/M/d HH:mm:ss",
-                                        java.util.Locale.CHINA).format(new java.util.Date()))
+                                .put("date", now())
                                 .put("status", "draft"));
                         a.store.save();
                         refresh();
@@ -166,20 +177,103 @@ public class LetterPage extends Page {
                 });
     }
 
-    private void openLetter(int index) {
+    private String now() {
+        return new java.text.SimpleDateFormat("yyyy/M/d HH:mm:ss", java.util.Locale.CHINA).format(new java.util.Date());
+    }
+
+    /** 往来记录弹窗：第 page 页显示链上的第 page 封信，可翻页 / 回信 / 寄出草稿 */
+    private void openThread(int rootIndex, int page) {
         JSONArray letters = a.store.role().optJSONArray("letters");
-        JSONObject letter = letters != null ? letters.optJSONObject(index) : null;
+        if (letters == null) return;
+        List<Integer> chain = chain(letters, rootIndex);
+        if (chain.isEmpty()) return;
+        page = Math.max(0, Math.min(page, chain.size() - 1));
+        final int shownIndex = chain.get(page);
+        JSONObject letter = letters.optJSONObject(shownIndex);
         if (letter == null) return;
         boolean mine = letter.optBoolean("mine", true);
         boolean draft = mine && "draft".equals(letter.optString("status"));
-        if (draft) {
-            Dialogs.confirm(a, a.store, "✉", letter.optString("title"),
-                    letter.optString("content"), "寄出这封信", false, () -> sendLetter(index));
-        } else {
-            Dialogs.notice(a, a.store, "✉", letter.optString("title"),
-                    letter.optString("content") + "\n\n— " + (mine ? "我" : a.store.displayName())
-                            + " · " + letter.optString("date"));
+        JSONObject last = letters.optJSONObject(chain.get(chain.size() - 1));
+        boolean canReply = last != null && !last.optBoolean("mine", true);
+
+        LinearLayout body = Ui.column(a);
+        LinearLayout paper = Ui.column(a);
+        paper.setBackground(Ui.rounded(Ui.surface(a, a.store), Ui.dp(a, 14)));
+        paper.setPadding(Ui.dp(a, 12), Ui.dp(a, 12), Ui.dp(a, 12), Ui.dp(a, 12));
+        paper.addView(Ui.text(a, mine ? "我写的" : a.store.displayName() + "写的", 11, Ui.faintInk(a, a.store)));
+        TextView title = Ui.boldText(a, letter.optString("title", "无标题"), 15, Ui.ink(a, a.store));
+        title.setPadding(0, Ui.dp(a, 4), 0, Ui.dp(a, 2));
+        paper.addView(title);
+        paper.addView(Ui.text(a, letter.optString("date", ""), 11, Ui.faintInk(a, a.store)));
+        TextView text = Ui.text(a, letter.optString("content", ""), 14, Ui.ink(a, a.store));
+        text.setPadding(0, Ui.dp(a, 8), 0, 0);
+        text.setLineSpacing(Ui.dp(a, 3), 1f);
+        paper.addView(text);
+        body.addView(paper);
+
+        final Dialog[] holder = new Dialog[1];
+        if (chain.size() > 1) {
+            LinearLayout pager = Ui.row(a);
+            pager.setGravity(Gravity.CENTER_VERTICAL);
+            pager.setPadding(0, Ui.dp(a, 10), 0, 0);
+            final int current = page;
+            TextView prev = pagerButton("‹", page > 0, () -> {
+                holder[0].dismiss();
+                openThread(rootIndex, current - 1);
+            });
+            TextView label = Ui.text(a, (page + 1) + " / " + chain.size(), 13, Ui.mutedInk(a, a.store));
+            label.setGravity(Gravity.CENTER);
+            TextView next = pagerButton("›", page < chain.size() - 1, () -> {
+                holder[0].dismiss();
+                openThread(rootIndex, current + 1);
+            });
+            pager.addView(prev);
+            pager.addView(label, Ui.weighted());
+            pager.addView(next);
+            body.addView(pager);
         }
+
+        String confirmText = draft ? "寄出这封信" : (canReply ? "回信" : null);
+        Runnable onConfirm = draft ? () -> sendLetter(shownIndex)
+                : (canReply ? () -> replyLetter(last.optString("id")) : null);
+        holder[0] = Dialogs.custom(a, a.store, Icons.MAIL, "往来记录",
+                "第 " + (page + 1) + " / " + chain.size() + " 页", body, "关闭", confirmText, onConfirm);
+    }
+
+    private TextView pagerButton(String label, boolean enabled, Runnable onClick) {
+        TextView button = Ui.boldText(a, label, 20, enabled ? Ui.ink(a, a.store) : Ui.line(a, a.store));
+        button.setGravity(Gravity.CENTER);
+        button.setBackground(Ui.roundedStroke(Ui.surface(a, a.store), Ui.dp(a, 10), Ui.line(a, a.store), Ui.dp(a, 1)));
+        button.setLayoutParams(new LinearLayout.LayoutParams(Ui.dp(a, 44), Ui.dp(a, 36)));
+        button.setEnabled(enabled);
+        if (enabled) button.setOnClickListener(v -> onClick.run());
+        return button;
+    }
+
+    private void replyLetter(String replyToId) {
+        Dialogs.Field body = new Dialogs.Field("content", "回信内容");
+        body.textarea = true;
+        body.placeholder = "写下你想回的话…";
+        Dialogs.form(a, a.store, Icons.MAIL, "回信", "寄出后他会再回你一封。", "寄出",
+                Dialogs.fields(body), values -> {
+                    String text = values.getOrDefault("content", "").trim();
+                    if (text.isEmpty()) return;
+                    try {
+                        a.store.role().getJSONArray("letters").put(new JSONObject()
+                                .put("id", Store.uid("lt"))
+                                .put("mine", true)
+                                .put("replyTo", replyToId)
+                                .put("title", "回信")
+                                .put("content", text)
+                                .put("date", now())
+                                .put("status", "sent"));
+                        a.store.save();
+                        refresh();
+                        a.toast("回信已寄出");
+                        scheduleHisReply();
+                    } catch (JSONException ignored) {
+                    }
+                });
     }
 
     private void sendLetter(int index) {
@@ -190,26 +284,36 @@ public class LetterPage extends Page {
             a.store.save();
             refresh();
             a.toast("信已寄出，等他回信吧");
-            /* 自动回信：1~3 分钟后他回一封 */
-            a.logic.handler().postDelayed(this::hisReplyLetter, a.store.rand(60, 180) * 1000L);
+            scheduleHisReply();
         } catch (JSONException ignored) {
         }
     }
 
-    private void hisReplyLetter() {
+    private void scheduleHisReply() {
+        JSONArray letters = a.store.role().optJSONArray("letters");
+        JSONObject last = letters != null && letters.length() > 0 ? letters.optJSONObject(letters.length() - 1) : null;
+        final String replyTo = last != null ? last.optString("id") : "";
+        a.logic.handler().postDelayed(() -> hisReplyLetter(replyTo), a.store.rand(60, 180) * 1000L);
+    }
+
+    private void hisReplyLetter(String replyTo) {
         try {
+            JSONArray letters = a.store.role().getJSONArray("letters");
+            int parent = indexOfId(letters, replyTo);
+            if (parent < 0) return;
             List<String> pool = a.store.allCards();
             StringBuilder body = new StringBuilder("你的信我认真读完了。\n");
             for (int i = 0; i < Math.min(3, pool.size()); i++) {
                 body.append(pool.get(a.store.rand(0, pool.size() - 1))).append('\n');
             }
             body.append("等你回信。");
-            a.store.role().getJSONArray("letters").put(new JSONObject()
+            letters.put(new JSONObject()
+                    .put("id", Store.uid("lt"))
                     .put("mine", false)
+                    .put("replyTo", replyTo)
                     .put("title", "给" + a.store.role().optString("myName", "你") + "的回信")
                     .put("content", body.toString())
-                    .put("date", new java.text.SimpleDateFormat("yyyy/M/d HH:mm:ss",
-                            java.util.Locale.CHINA).format(new java.util.Date()))
+                    .put("date", now())
                     .put("status", "recv"));
             a.store.save();
             if ("pageLetter".equals(a.currentPage)) refresh();
@@ -218,14 +322,13 @@ public class LetterPage extends Page {
         }
     }
 
-    private void deleteLetter(int index) {
-        Dialogs.confirm(a, a.store, "⌫", "删除这封信？", "删除后无法恢复", "删除", true, () -> {
-            JSONArray letters = a.store.role().optJSONArray("letters");
-            if (letters != null) {
-                letters.remove(index);
-                a.store.save();
-                refresh();
-            }
-        });
+    private void deleteThread(int rootIndex) {
+        JSONArray letters = a.store.role().optJSONArray("letters");
+        if (letters == null) return;
+        List<Integer> chain = chain(letters, rootIndex);
+        java.util.Collections.sort(chain);
+        for (int i = chain.size() - 1; i >= 0; i--) letters.remove(chain.get(i));
+        a.store.save();
+        refresh();
     }
 }

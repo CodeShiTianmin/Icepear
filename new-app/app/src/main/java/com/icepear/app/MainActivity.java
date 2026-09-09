@@ -100,6 +100,7 @@ public class MainActivity extends Activity implements ChatLogic.Host {
         pages.put("pageMoments", new MomentsPage(this));
         pages.put("pageCloud", new CloudPage(this));
         pages.put("pageFav", new FavoritesPage(this));
+        pages.put("pageMemo", new AnniversaryPage(this));
 
         videoOverlay = new VideoOverlay(this);
         root.addView(videoOverlay.rootView(), new FrameLayout.LayoutParams(
@@ -256,26 +257,38 @@ public class MainActivity extends Activity implements ChatLogic.Host {
         return false;
     }
 
+    /** 未读红点：聊天 / 朋友圈有新内容且当前不在该页时显示，进入页面后清除 */
+    private final java.util.Set<String> unread = new java.util.HashSet<>();
+
+    public void markUnread(String pageId) {
+        if (pageId.equals(currentPage)) return;
+        if (unread.add(pageId)) buildBottomNav();
+    }
+
     private void buildBottomNav() {
         bottomNav.removeAllViews();
         bottomNav.setBackgroundColor(Ui.navBg(this, store));
-        View line = new View(this);
-        line.setBackgroundColor(Ui.line(this, store));
         for (String[] item : NAV) {
             final String id = item[0];
             boolean active = id.equals(currentPage);
-            int color = active ? Ui.plum(this, store) : Ui.faintInk(this, store);
-            LinearLayout button = new LinearLayout(this);
-            button.setOrientation(LinearLayout.VERTICAL);
-            button.setGravity(Gravity.CENTER);
+            int color = active ? Ui.plum(this, store) : Ui.mutedInk(this, store);
+            FrameLayout button = new FrameLayout(this);
             button.setContentDescription(item[2]);
-            ImageView icon = SvgIcon.view(this, item[1], color, 24);
-            button.addView(icon);
-            TextView label = Ui.text(this, item[2], 11, color);
-            label.setGravity(Gravity.CENTER);
-            label.setPadding(0, Ui.dp(this, 3), 0, 0);
-            if (active) label.setTypeface(label.getTypeface(), android.graphics.Typeface.BOLD);
-            button.addView(label);
+            ImageView icon = SvgIcon.view(this, item[1], color, 26);
+            int pad = Ui.dp(this, 8);
+            icon.setPadding(pad, pad, pad, pad);
+            FrameLayout.LayoutParams iconLp = new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER);
+            button.addView(icon, iconLp);
+            if (unread.contains(id) && !active) {
+                View dot = new View(this);
+                int d = Ui.dp(this, 8);
+                dot.setBackground(Ui.rounded(0xFFE5484D, d / 2f));
+                FrameLayout.LayoutParams dotLp = new FrameLayout.LayoutParams(d, d, Gravity.CENTER);
+                dotLp.leftMargin = Ui.dp(this, 22);
+                dotLp.bottomMargin = Ui.dp(this, 20);
+                button.addView(dot, dotLp);
+            }
             button.setOnClickListener(v -> goPage(id, true));
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
             bottomNav.addView(button, lp);
@@ -289,6 +302,7 @@ public class MainActivity extends Activity implements ChatLogic.Host {
         if (page == null) return;
         if (pushBack && !id.equals(currentPage)) backStack.push(currentPage);
         currentPage = id;
+        unread.remove(id);
         pageHost.removeAllViews();
         pageHost.addView(page.view(), new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -347,12 +361,16 @@ public class MainActivity extends Activity implements ChatLogic.Host {
             if (bitmap != null) {
                 android.widget.ImageView image = new android.widget.ImageView(this);
                 image.setImageBitmap(bitmap);
-                image.setScaleType(android.widget.ImageView.ScaleType.CENTER_CROP);
+                image.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+                image.setAdjustViewBounds(true);
                 image.setClipToOutline(true);
                 image.setBackground(Ui.rounded(0x00000000, Ui.dp(this, 12)));
-                FrameLayout.LayoutParams imgLp = new FrameLayout.LayoutParams(
-                        Ui.dp(this, 128), Ui.dp(this, 50), Gravity.TOP | Gravity.CENTER_HORIZONTAL);
-                imgLp.topMargin = Ui.dp(this, 4);
+                int maxW = Ui.dp(this, 200);
+                int maxH = Ui.dp(this, 110);
+                float scale = Math.min(maxW / (float) bitmap.getWidth(), maxH / (float) bitmap.getHeight());
+                int w = Math.max(1, Math.round(bitmap.getWidth() * scale));
+                int h = Math.max(1, Math.round(bitmap.getHeight() * scale));
+                FrameLayout.LayoutParams imgLp = new FrameLayout.LayoutParams(w, h, Gravity.CENTER);
                 stage.addView(image, imgLp);
             }
         }
@@ -576,6 +594,7 @@ public class MainActivity extends Activity implements ChatLogic.Host {
 
     @Override
     public void onChatChanged(boolean scrollToBottom) {
+        if (!scrollToBottom) markUnread("pageChat");
         Page chat = pages.get("pageChat");
         if (chat instanceof ChatPage) ((ChatPage) chat).renderChat(scrollToBottom);
     }
