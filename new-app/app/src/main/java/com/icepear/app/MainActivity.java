@@ -101,6 +101,7 @@ public class MainActivity extends Activity implements ChatLogic.Host {
         pages.put("pageMoments", new MomentsPage(this));
         pages.put("pageCloud", new CloudPage(this));
         pages.put("pageFav", new FavoritesPage(this));
+        pages.put("pageMemoryEdit", new MemoryEditPage(this));
         pages.put("pageMemo", new AnniversaryPage(this));
 
         videoOverlay = new VideoOverlay(this);
@@ -631,6 +632,48 @@ public class MainActivity extends Activity implements ChatLogic.Host {
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType(mimeType);
         startActivityForResult(intent, REQ_PICK_FILE);
+    }
+
+    /**
+     * 无损保存到相册（PNG）。Android 10+ 直接写 MediaStore 的 Pictures/Icepear；
+     * 更低版本没有存储权限，改走系统“保存到…”文档选择器。
+     */
+    public void saveImageToGallery(android.graphics.Bitmap bitmap, String fileName) {
+        if (bitmap == null) {
+            toast("没有可保存的图片");
+            return;
+        }
+        if (Build.VERSION.SDK_INT >= 29) {
+            android.content.ContentValues values = new android.content.ContentValues();
+            values.put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, fileName);
+            values.put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/png");
+            values.put(android.provider.MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Icepear");
+            values.put(android.provider.MediaStore.Images.Media.IS_PENDING, 1);
+            Uri uri = getContentResolver().insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
+            if (uri == null) {
+                toast("保存失败");
+                return;
+            }
+            try (java.io.OutputStream out = getContentResolver().openOutputStream(uri)) {
+                bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out);
+                values.clear();
+                values.put(android.provider.MediaStore.Images.Media.IS_PENDING, 0);
+                getContentResolver().update(uri, values, null, null);
+                toast("已保存到相册");
+            } catch (Exception e) {
+                getContentResolver().delete(uri, null, null);
+                toast("保存失败");
+            }
+            return;
+        }
+        saveFile("image/png", fileName, uri -> {
+            try (java.io.OutputStream out = getContentResolver().openOutputStream(uri)) {
+                bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out);
+                toast("已保存");
+            } catch (Exception e) {
+                toast("保存失败");
+            }
+        });
     }
 
     public void saveFile(String mimeType, String fileName, FileSaved callback) {
