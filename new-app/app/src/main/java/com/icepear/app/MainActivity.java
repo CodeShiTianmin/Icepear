@@ -39,6 +39,7 @@ public class MainActivity extends Activity implements ChatLogic.Host {
 
     private static final int REQ_PICK_FILE = 4107;
     private static final int REQ_SAVE_FILE = 4108;
+    private static final int REQ_PICK_MULTI = 4109;
 
     public Store store;
     public SoundPlayer sound;
@@ -544,6 +545,80 @@ public class MainActivity extends Activity implements ChatLogic.Host {
         }
     }
 
+    /** 相册选视频 */
+    public void pickVideo(FilePicked callback) {
+        pendingPick = callback;
+        Intent intent;
+        if (Build.VERSION.SDK_INT >= 33) {
+            intent = new Intent(android.provider.MediaStore.ACTION_PICK_IMAGES);
+            intent.setType("video/*");
+        } else {
+            intent = new Intent(Intent.ACTION_PICK, android.provider.MediaStore.Video.Media.EXTERNAL_CONTENT_URI);
+        }
+        try {
+            startActivityForResult(intent, REQ_PICK_FILE);
+        } catch (Exception e) {
+            pendingPick = null;
+            pickFile("video/*", callback);
+        }
+    }
+
+    public interface FilesPicked {
+        void run(java.util.List<byte[]> bytes, java.util.List<String> mimes);
+    }
+
+    private FilesPicked pendingMultiPick;
+
+    /** 相册多选图片 */
+    public void pickImages(FilesPicked callback) {
+        pendingMultiPick = callback;
+        Intent intent;
+        if (Build.VERSION.SDK_INT >= 33) {
+            intent = new Intent(android.provider.MediaStore.ACTION_PICK_IMAGES);
+            intent.putExtra(android.provider.MediaStore.EXTRA_PICK_IMAGES_MAX, 50);
+        } else {
+            intent = new Intent(Intent.ACTION_GET_CONTENT);
+            intent.setType("image/*");
+            intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+        }
+        try {
+            startActivityForResult(intent, REQ_PICK_MULTI);
+        } catch (Exception e) {
+            pendingMultiPick = null;
+            toast("无法打开相册");
+        }
+    }
+
+    /** 应用内播放视频 */
+    public void playVideo(java.io.File file) {
+        if (file == null || !file.exists()) {
+            toast("视频文件不存在");
+            return;
+        }
+        android.app.Dialog dialog = new android.app.Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
+        FrameLayout box = new FrameLayout(this);
+        box.setBackgroundColor(Color.BLACK);
+        android.widget.VideoView video = new android.widget.VideoView(this);
+        FrameLayout.LayoutParams vlp = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER);
+        box.addView(video, vlp);
+        android.widget.MediaController controller = new android.widget.MediaController(this);
+        controller.setAnchorView(video);
+        video.setMediaController(controller);
+        video.setOnErrorListener((mp, what, extra) -> {
+            toast("无法播放该视频");
+            dialog.dismiss();
+            return true;
+        });
+        video.setOnCompletionListener(mp -> dialog.dismiss());
+        box.setOnClickListener(v -> dialog.dismiss());
+        dialog.setContentView(box);
+        dialog.setOnDismissListener(d -> video.stopPlayback());
+        dialog.show();
+        video.setVideoURI(Uri.fromFile(file));
+        video.start();
+    }
+
     public void pickFile(String mimeType, FilePicked callback) {
         pendingPick = callback;
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
@@ -564,6 +639,37 @@ public class MainActivity extends Activity implements ChatLogic.Host {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQ_PICK_MULTI) {
+            FilesPicked callback = pendingMultiPick;
+            pendingMultiPick = null;
+            if (resultCode != RESULT_OK || data == null || callback == null) return;
+            java.util.List<Uri> uris = new java.util.ArrayList<>();
+            ClipData clip = data.getClipData();
+            if (clip != null) {
+                for (int i = 0; i < clip.getItemCount(); i++) {
+                    Uri u = clip.getItemAt(i).getUri();
+                    if (u != null) uris.add(u);
+                }
+            } else if (data.getData() != null) {
+                uris.add(data.getData());
+            }
+            java.util.List<byte[]> all = new java.util.ArrayList<>();
+            java.util.List<String> mimes = new java.util.ArrayList<>();
+            for (Uri u : uris) {
+                try (InputStream in = getContentResolver().openInputStream(u)) {
+                    ByteArrayOutputStream out = new ByteArrayOutputStream();
+                    byte[] buf = new byte[8192];
+                    int n;
+                    while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+                    String mime = getContentResolver().getType(u);
+                    all.add(out.toByteArray());
+                    mimes.add(mime == null ? "" : mime);
+                } catch (Exception ignored) {
+                }
+            }
+            if (!all.isEmpty()) callback.run(all, mimes);
+            return;
+        }
         if (resultCode != RESULT_OK || data == null || data.getData() == null) {
             pendingPick = null;
             pendingSave = null;

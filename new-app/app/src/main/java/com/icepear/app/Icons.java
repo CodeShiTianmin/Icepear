@@ -51,6 +51,8 @@ public final class Icons {
     public static final String LOC = O + "<path d=\"M12 21s7-5.5 7-11a7 7 0 1 0-14 0c0 5.5 7 11 7 11z\"/><circle cx=\"12\" cy=\"10\" r=\"2.5\"/>" + E;
     public static final String SHOP = O + "<path d=\"M4 4h16l2 6H2z\"/><path d=\"M2 10h20v4a3 3 0 0 1-3 3H5a3 3 0 0 1-3-3z\"/><path d=\"M8 17v3h8v-3\"/>" + E;
     public static final String VIDEO = O + "<rect x=\"2\" y=\"6\" width=\"13\" height=\"12\" rx=\"2\"/><path d=\"M15 10l7-4v12l-7-4\"/>" + E;
+    public static final String FILM = O + "<rect x=\"3\" y=\"4\" width=\"18\" height=\"16\" rx=\"2\"/><path d=\"M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4\"/>" + E;
+    public static final String PLAY = O + "<path d=\"M7 5v14l11-7z\"/>" + E;
     public static final String CLOUD = O + "<path d=\"M17.5 17h-11A3.5 3.5 0 0 1 6.2 10a5.5 5.5 0 0 1 10.6-.4A3.2 3.2 0 0 1 17.5 17Z\"/><circle cx=\"6.8\" cy=\"8.2\" r=\"2.6\"/><path d=\"M6.8 2.9v1M2.9 6.8h1M3.6 4.3l.8.8\"/>" + E;
     public static final String WEEKLY = O + "<path d=\"M4 19V9\"/><path d=\"M10 19V5\"/><path d=\"M16 19v-7\"/><path d=\"M22 19H2\"/>" + E;
     public static final String GIFT = O + "<path d=\"M12 8v13M12 8s-3-4-5-4 0 4 5 4ZM12 8s3-4 5-4 0 4-5 4Z\"/><path d=\"M4 12h16\"/>" + E;

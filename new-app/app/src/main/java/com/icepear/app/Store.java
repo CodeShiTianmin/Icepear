@@ -620,7 +620,7 @@ public final class Store {
     }
 
     public void deleteMedia(String ref) {
-        if (ref != null && ref.startsWith("idb:")) {
+        if (ref != null && (ref.startsWith("idb:") || ref.startsWith("vid:"))) {
             //noinspection ResultOfMethodCallIgnored
             new File(mediaDir, ref.substring(4)).delete();
         }
@@ -631,6 +631,29 @@ public final class Store {
         String dataUrl = "data:" + (mime == null || mime.isEmpty() ? "image/png" : mime) + ";base64,"
                 + Base64.encodeToString(bytes, Base64.NO_WRAP);
         return putMediaDataUrl(dataUrl, uid("img"));
+    }
+
+    /** 视频以原始文件保存（不做 base64），引用为 vid:key */
+    public String importVideo(byte[] bytes, String mime) {
+        String ext = mime != null && mime.contains("webm") ? ".webm" : ".mp4";
+        String key = uid("vid") + ext;
+        try (FileOutputStream out = new FileOutputStream(new File(mediaDir, key))) {
+            out.write(bytes);
+            return "vid:" + key;
+        } catch (IOException e) {
+            return "";
+        }
+    }
+
+    public static boolean isVideoRef(String ref) {
+        return ref != null && ref.startsWith("vid:");
+    }
+
+    /** vid:key -> 文件；不存在返回 null */
+    public File videoFile(String ref) {
+        if (!isVideoRef(ref)) return null;
+        File file = new File(mediaDir, ref.substring(4));
+        return file.exists() ? file : null;
     }
 
     public String importAudio(byte[] bytes, String mime) {

@@ -173,6 +173,94 @@ public final class Ui {
         }
     }
 
+    /** data url 的原始字节（不含前缀），非图片/视频返回 null */
+    public static byte[] dataUrlBytes(String dataUrl) {
+        try {
+            if (dataUrl == null) return null;
+            int comma = dataUrl.indexOf(',');
+            if (!dataUrl.startsWith("data:") || comma < 0) return null;
+            return Base64.decode(dataUrl.substring(comma + 1), Base64.DEFAULT);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    public static boolean isGif(String dataUrl) {
+        return dataUrl != null && dataUrl.startsWith("data:image/gif");
+    }
+
+    public static boolean isVideo(String dataUrl) {
+        return dataUrl != null && dataUrl.startsWith("data:video");
+    }
+
+    /**
+     * 把 data url 图片设置到 ImageView：GIF 使用 ImageDecoder 解码为可动画 Drawable 并播放，
+     * 其余按位图显示。返回 false 表示无法解码。
+     */
+    public static boolean setImage(ImageView target, String dataUrl) {
+        if (dataUrl == null || !dataUrl.startsWith("data:image")) return false;
+        if (isGif(dataUrl) && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+            byte[] bytes = dataUrlBytes(dataUrl);
+            if (bytes != null) {
+                try {
+                    android.graphics.ImageDecoder.Source source = android.graphics.ImageDecoder.createSource(
+                            java.nio.ByteBuffer.wrap(bytes));
+                    android.graphics.drawable.Drawable drawable = android.graphics.ImageDecoder.decodeDrawable(source);
+                    target.setImageDrawable(drawable);
+                    if (drawable instanceof android.graphics.drawable.AnimatedImageDrawable) {
+                        android.graphics.drawable.AnimatedImageDrawable anim = (android.graphics.drawable.AnimatedImageDrawable) drawable;
+                        anim.setRepeatCount(android.graphics.drawable.AnimatedImageDrawable.REPEAT_INFINITE);
+                        anim.start();
+                    }
+                    return true;
+                } catch (Exception ignored) {
+                }
+            }
+        }
+        Bitmap bitmap = decodeDataUrl(dataUrl);
+        if (bitmap == null) return false;
+        target.setImageBitmap(bitmap);
+        return true;
+    }
+
+    /** 视频文件的第一帧缩略图，失败返回 null（不会抛出） */
+    public static Bitmap videoThumb(java.io.File file) {
+        if (file == null) return null;
+        android.media.MediaMetadataRetriever retriever = new android.media.MediaMetadataRetriever();
+        try {
+            retriever.setDataSource(file.getAbsolutePath());
+            return retriever.getFrameAtTime(0);
+        } catch (Exception e) {
+            return null;
+        } finally {
+            try {
+                retriever.release();
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    /** 视频缩略卡：首帧 + 播放标，点击播放；文件缺失时显示占位 */
+    public static View videoCard(Context c, Store store, java.io.File file, int widthDp, int heightDp, float radiusPx) {
+        FrameLayout box = new FrameLayout(c);
+        box.setBackground(rounded(0xFF222222, radiusPx));
+        box.setClipToOutline(true);
+        int w = dp(c, widthDp), h = dp(c, heightDp);
+        Bitmap thumb = videoThumb(file);
+        if (thumb != null) {
+            ImageView image = new ImageView(c);
+            image.setImageBitmap(thumb);
+            image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            box.addView(image, new FrameLayout.LayoutParams(w, h));
+        }
+        ImageView play = SvgIcon.view(c, Icons.PLAY, Color.WHITE, 26);
+        play.setBackground(rounded(0x66000000, dp(c, 24)));
+        play.setPadding(dp(c, 11), dp(c, 11), dp(c, 11), dp(c, 11));
+        box.addView(play, new FrameLayout.LayoutParams(dp(c, 48), dp(c, 48), Gravity.CENTER));
+        box.setLayoutParams(new LinearLayout.LayoutParams(w, h));
+        return box;
+    }
+
     /**
      * 头像视图：图片引用则显示圆形图片，否则显示 emoji/文字圆形底。
      * 等价于旧版 headHTML()。
@@ -192,10 +280,8 @@ public final class Ui {
         FrameLayout box = new FrameLayout(c);
         box.setLayoutParams(new ViewGroup.LayoutParams(size, size));
         if (resolved.startsWith("data:image")) {
-            Bitmap bitmap = decodeDataUrl(resolved);
-            if (bitmap != null) {
-                ImageView image = new ImageView(c);
-                image.setImageBitmap(bitmap);
+            ImageView image = new ImageView(c);
+            if (setImage(image, resolved)) {
                 image.setScaleType(ImageView.ScaleType.CENTER_CROP);
                 image.setClipToOutline(true);
                 image.setBackground(rounded(0x00000000, size / 2f));
