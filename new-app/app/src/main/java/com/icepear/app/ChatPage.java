@@ -39,6 +39,8 @@ public class ChatPage extends Page {
     private EditText textInput;
     private LinearLayout quoteBar;
     private TextView quoteText;
+    private LinearLayout offerBar;
+    private TextView offerText;
     private TextView typingView;
     private TextView statusView;
     private TextView nameView;
@@ -75,27 +77,33 @@ public class ChatPage extends Page {
         LinearLayout names = Ui.column(a);
         names.setPadding(Ui.dp(a, 10), 0, 0, 0);
         nameView = Ui.boldText(a, "", 16, Ui.ink(a, a.store));
-        statusView = Ui.text(a, "", 11, Ui.mutedInk(a, a.store));
-        typingView = Ui.text(a, "对方正在输入…", 11, Ui.plum(a, a.store));
+        LinearLayout statusRow = Ui.row(a);
+        View statusDot = new View(a);
+        statusDot.setBackground(Ui.rounded(Ui.mutedInk(a, a.store), Ui.dp(a, 3)));
+        LinearLayout.LayoutParams dotLp = new LinearLayout.LayoutParams(Ui.dp(a, 6), Ui.dp(a, 6));
+        dotLp.rightMargin = Ui.dp(a, 5);
+        statusRow.addView(statusDot, dotLp);
+        statusView = Ui.text(a, "", 12, Ui.mutedInk(a, a.store));
+        statusRow.addView(statusView);
+        typingView = Ui.text(a, "正在输入…", 12, Ui.faintInk(a, a.store));
+        typingView.setPadding(Ui.dp(a, 8), 0, 0, 0);
         typingView.setVisibility(View.GONE);
+        statusRow.addView(typingView);
         names.addView(nameView);
-        names.addView(statusView);
-        names.addView(typingView);
+        names.addView(statusRow);
         top.addView(names, Ui.weighted());
         boolean dark = Ui.dark(a.store);
-        ImageView skinButton = SvgIcon.view(a, dark ? Icons.SUN : Icons.MOON, Ui.ink(a, a.store), 22);
+        ImageView skinButton = SvgIcon.view(a, dark ? Icons.SUN : Icons.MOON, Ui.ink(a, a.store), 24);
         skinButton.setContentDescription(dark ? "日间模式" : "夜间模式");
         skinButton.setPadding(Ui.dp(a, 8), Ui.dp(a, 8), Ui.dp(a, 8), Ui.dp(a, 8));
-        skinButton.setBackground(Ui.rounded(Ui.surfaceStrong(a, a.store), Ui.dp(a, 19)));
         skinButton.setOnClickListener(v -> a.toggleDark());
-        top.addView(skinButton, new LinearLayout.LayoutParams(Ui.dp(a, 38), Ui.dp(a, 38)));
-        ImageView menuButton = SvgIcon.view(a, Icons.MORE, Ui.ink(a, a.store), 22);
+        top.addView(skinButton, new LinearLayout.LayoutParams(Ui.dp(a, 40), Ui.dp(a, 40)));
+        ImageView menuButton = SvgIcon.view(a, Icons.MORE, Ui.ink(a, a.store), 24);
         menuButton.setPadding(Ui.dp(a, 8), Ui.dp(a, 8), Ui.dp(a, 8), Ui.dp(a, 8));
-        menuButton.setBackground(Ui.rounded(Ui.surfaceStrong(a, a.store), Ui.dp(a, 19)));
         menuButton.setContentDescription("功能中心");
         menuButton.setOnClickListener(v -> a.goPage("pageMenu", true));
-        LinearLayout.LayoutParams mlp = new LinearLayout.LayoutParams(Ui.dp(a, 38), Ui.dp(a, 38));
-        mlp.leftMargin = Ui.dp(a, 8);
+        LinearLayout.LayoutParams mlp = new LinearLayout.LayoutParams(Ui.dp(a, 40), Ui.dp(a, 40));
+        mlp.leftMargin = Ui.dp(a, 6);
         top.addView(menuButton, mlp);
         page.addView(top);
 
@@ -154,7 +162,36 @@ public class ChatPage extends Page {
         quoteBar.setVisibility(View.GONE);
         page.addView(quoteBar);
 
-        /* 输入栏：表情 / 输入框 / 加号 / 发送（对应浏览器版 #inputBar） */
+        /* 搜索跳转后的“引用这条”提示栏 */
+        offerBar = Ui.row(a);
+        offerBar.setGravity(Gravity.CENTER_VERTICAL);
+        offerBar.setBackgroundColor(Ui.surface(a, a.store));
+        offerBar.setPadding(Ui.dp(a, 12), Ui.dp(a, 6), Ui.dp(a, 12), Ui.dp(a, 6));
+        offerText = Ui.text(a, "", 12, Ui.mutedInk(a, a.store));
+        offerText.setSingleLine(true);
+        offerBar.addView(offerText, Ui.weighted());
+        TextView offerQuote = Ui.boldText(a, "引用", 13, Ui.plum(a, a.store));
+        offerQuote.setPadding(Ui.dp(a, 12), 0, Ui.dp(a, 6), 0);
+        offerQuote.setOnClickListener(v -> {
+            if (offerRef != null) setQuote(offerTarget, offerRef);
+            hideOffer();
+        });
+        offerBar.addView(offerQuote);
+        TextView offerBack = Ui.boldText(a, "返回搜索", 13, Ui.mutedInk(a, a.store));
+        offerBack.setPadding(Ui.dp(a, 8), 0, Ui.dp(a, 6), 0);
+        offerBack.setOnClickListener(v -> {
+            hideOffer();
+            a.goPage("pageSearch", true);
+        });
+        offerBar.addView(offerBack);
+        TextView offerClose = Ui.boldText(a, "×", 18, Ui.mutedInk(a, a.store));
+        offerClose.setPadding(Ui.dp(a, 8), 0, 0, 0);
+        offerClose.setOnClickListener(v -> hideOffer());
+        offerBar.addView(offerClose);
+        offerBar.setVisibility(View.GONE);
+        page.addView(offerBar);
+
+        /* 输入栏：加号 / 输入框 / 表情 / 发送 */
         LinearLayout input = Ui.row(a);
         input.setBackgroundColor(Ui.navBg(a, a.store));
         input.setGravity(Gravity.CENTER_VERTICAL);
@@ -162,11 +199,11 @@ public class ChatPage extends Page {
         View topLine = new View(a);
         topLine.setBackgroundColor(Ui.line(a, a.store));
         page.addView(topLine, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1));
-        emojiButton = SvgIcon.view(a, Icons.SMILE, Ui.ink(a, a.store), 26);
-        emojiButton.setPadding(Ui.dp(a, 6), Ui.dp(a, 6), Ui.dp(a, 6), Ui.dp(a, 6));
-        emojiButton.setContentDescription("表情");
-        emojiButton.setOnClickListener(v -> togglePanel("emoji"));
-        input.addView(emojiButton, new LinearLayout.LayoutParams(Ui.dp(a, 38), Ui.dp(a, 38)));
+        ImageView plusButton = SvgIcon.view(a, Icons.PLUS_CIRCLE, Ui.ink(a, a.store), 26);
+        plusButton.setPadding(Ui.dp(a, 6), Ui.dp(a, 6), Ui.dp(a, 6), Ui.dp(a, 6));
+        plusButton.setContentDescription("更多");
+        plusButton.setOnClickListener(v -> togglePanel("plus"));
+        input.addView(plusButton, new LinearLayout.LayoutParams(Ui.dp(a, 38), Ui.dp(a, 38)));
         textInput = Dialogs.makeInput(a, a.store, false);
         textInput.setHint("说点什么…");
         textInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE
@@ -182,11 +219,11 @@ public class ChatPage extends Page {
         tlp.leftMargin = Ui.dp(a, 4);
         tlp.rightMargin = Ui.dp(a, 4);
         input.addView(textInput, tlp);
-        ImageView plusButton = SvgIcon.view(a, Icons.PLUS_CIRCLE, Ui.ink(a, a.store), 26);
-        plusButton.setPadding(Ui.dp(a, 6), Ui.dp(a, 6), Ui.dp(a, 6), Ui.dp(a, 6));
-        plusButton.setContentDescription("更多");
-        plusButton.setOnClickListener(v -> togglePanel("plus"));
-        input.addView(plusButton, new LinearLayout.LayoutParams(Ui.dp(a, 38), Ui.dp(a, 38)));
+        emojiButton = SvgIcon.view(a, Icons.SMILE, Ui.ink(a, a.store), 26);
+        emojiButton.setPadding(Ui.dp(a, 6), Ui.dp(a, 6), Ui.dp(a, 6), Ui.dp(a, 6));
+        emojiButton.setContentDescription("表情");
+        emojiButton.setOnClickListener(v -> togglePanel("emoji"));
+        input.addView(emojiButton, new LinearLayout.LayoutParams(Ui.dp(a, 38), Ui.dp(a, 38)));
         ImageView sendButton = SvgIcon.view(a, Icons.SEND, Color.WHITE, 18);
         sendButton.setBackground(Ui.rounded(Ui.plum(a, a.store), Ui.dp(a, 19)));
         sendButton.setPadding(Ui.dp(a, 10), Ui.dp(a, 10), Ui.dp(a, 10), Ui.dp(a, 10));
@@ -261,15 +298,36 @@ public class ChatPage extends Page {
         target.setBackground(Ui.gradient(start, end, 0));
     }
 
+    /** 主题重建前记下的滚动位置，重建后恢复，避免切换日/夜时整页滚动 */
+    private int keepScrollY = -1;
+    private boolean keepAll;
+
+    @Override
+    public void rebuild() {
+        if (chatScroll != null) {
+            keepScrollY = chatScroll.getScrollY();
+            keepAll = showAll;
+        }
+        super.rebuild();
+    }
+
     @Override
     public void refresh() {
         JSONObject role = a.store.role();
         if (role == null) return;
         nameView.setText(a.store.displayName());
-        statusView.setText("[" + role.optString("statusNow", "想你") + "]");
+        statusView.setText(role.optString("statusNow", "想你"));
         avatarBox.removeAllViews();
         avatarBox.addView(Ui.avatar(a, a.store, "other", 40));
-        renderChat(true);
+        if (keepScrollY >= 0) {
+            showAll = keepAll;
+            renderChat(false);
+            final int y = keepScrollY;
+            keepScrollY = -1;
+            chatScroll.post(() -> chatScroll.scrollTo(0, y));
+        } else {
+            renderChat(true);
+        }
     }
 
     public void setTyping(boolean typing) {
@@ -278,10 +336,28 @@ public class ChatPage extends Page {
 
     /* ---------- 消息渲染 ---------- */
 
+    /** 大量历史时只渲染最近 RENDER_LIMIT 条，顶部提供“查看更早消息” */
+    private static final int RENDER_LIMIT = 80;
+    private boolean showAll;
+    private int renderStart;
+
     public void renderChat(boolean scrollToBottom) {
         if (chatArea == null) return;
         chatArea.removeAllViews();
         JSONArray chat = a.store.chat();
+        renderStart = showAll ? 0 : Math.max(0, chat.length() - RENDER_LIMIT);
+        if (renderStart > 0) {
+            TextView more = Ui.boldText(a, "查看更早消息（" + renderStart + " 条）", 12, Ui.plum(a, a.store));
+            more.setGravity(Gravity.CENTER);
+            more.setPadding(0, Ui.dp(a, 10), 0, Ui.dp(a, 10));
+            more.setOnClickListener(v -> {
+                showAll = true;
+                renderChat(false);
+                chatScroll.post(() -> chatScroll.scrollTo(0, 0));
+            });
+            chatArea.addView(more, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        }
         JSONObject font = a.store.data.optJSONObject("font");
         int fontSize = font != null ? font.optInt("size", 15) : 15;
         float radius = font != null ? font.optInt("radius", 10) : 10;
@@ -296,7 +372,7 @@ public class ChatPage extends Page {
         String timeMode = chatOpt != null ? chatOpt.optString("timeMode", "all") : "all";
         String readMode = chatOpt != null ? chatOpt.optString("readMode", "all") : "all";
 
-        for (int i = 0; i < chat.length(); i++) {
+        for (int i = renderStart; i < chat.length(); i++) {
             JSONObject msg = chat.optJSONObject(i);
             if (msg == null) continue;
             final int index = i;
@@ -308,6 +384,15 @@ public class ChatPage extends Page {
                 TextView sys = Ui.text(a, label, 11, Ui.faintInk(a, a.store));
                 sys.setGravity(Gravity.CENTER);
                 sys.setPadding(0, Ui.dp(a, 8), 0, Ui.dp(a, 8));
+                sys.setOnLongClickListener(v -> {
+                    openMessageMenu(index, v);
+                    return true;
+                });
+                if (selecting) {
+                    sys.setOnClickListener(v -> toggleSelected(index));
+                    sys.setAlpha(selected.contains(index) ? 0.45f : 1f);
+                    if (selected.contains(index)) sys.setBackground(Ui.rounded(Ui.surfaceStrong(a, a.store), Ui.dp(a, 8)));
+                }
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
                 chatArea.addView(sys, lp);
@@ -374,6 +459,7 @@ public class ChatPage extends Page {
         }
         if (scrollToBottom) {
             chatScroll.post(() -> chatScroll.fullScroll(View.FOCUS_DOWN));
+            chatScroll.postDelayed(() -> chatScroll.fullScroll(View.FOCUS_DOWN), 120);
         }
     }
 
@@ -383,12 +469,13 @@ public class ChatPage extends Page {
         if ("red".equals(type) || "zhuan".equals(type) || "gift".equals(type)) {
             return buildTxCard(msg, index);
         }
+        if ("video".equals(type)) {
+            return buildVideoCard(msg, radius);
+        }
         if ("img".equals(type)) {
             String source = a.store.resolveMedia(msg.optString("src", ""));
-            android.graphics.Bitmap bitmap = Ui.decodeDataUrl(source);
-            if (bitmap != null) {
-                ImageView image = new ImageView(a);
-                image.setImageBitmap(bitmap);
+            ImageView image = new ImageView(a);
+            if (Ui.setImage(image, source)) {
                 image.setScaleType(ImageView.ScaleType.FIT_CENTER);
                 image.setAdjustViewBounds(true);
                 image.setMaxWidth(Ui.dp(a, 160));
@@ -418,7 +505,7 @@ public class ChatPage extends Page {
             return card;
         }
         LinearLayout bubble = Ui.column(a);
-        bubble.setBackground(Ui.rounded(bg, Ui.dp(a, radius)));
+        bubble.setBackground(Ui.rounded(bg | 0xFF000000, Ui.dp(a, radius)));
         bubble.setPadding(Ui.dp(a, 12), Ui.dp(a, 8), Ui.dp(a, 12), Ui.dp(a, 8));
         String quote = msg.optString("quote", "");
         if (!quote.isEmpty()) {
@@ -452,16 +539,19 @@ public class ChatPage extends Page {
         }
         String status = msg.optString("txStatus", "");
         boolean handled = !status.isEmpty() || msg.optBoolean("handled", false);
+        if (handled) {
+            start = blend(start, 0xFFC9B8BE, 0.45f);
+            end = blend(end, 0xFFC9B8BE, 0.45f);
+        }
         LinearLayout card = Ui.row(a);
         card.setBackground(Ui.gradient(start, end, Ui.dp(a, 14)));
         card.setPadding(Ui.dp(a, 14), Ui.dp(a, 12), Ui.dp(a, 14), Ui.dp(a, 12));
-        card.setAlpha(handled ? 0.72f : 1f);
         card.setMinimumWidth(Ui.dp(a, 210));
         card.setGravity(Gravity.CENTER_VERTICAL);
         String iconSvg = msg.optString("icon", "");
         if (!SvgIcon.isSvg(iconSvg)) iconSvg = a.store.pickTxIcon(type);
         FrameLayout iconBox = new FrameLayout(a);
-        iconBox.setBackground(Ui.rounded(0x33FFFFFF, Ui.dp(a, 12)));
+        iconBox.setBackground(Ui.rounded(handled ? 0x55FFFFFF : 0x33FFFFFF, Ui.dp(a, 12)));
         iconBox.addView(SvgIcon.view(a, iconSvg, Color.WHITE, 24), new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER));
         card.addView(iconBox, new LinearLayout.LayoutParams(Ui.dp(a, 42), Ui.dp(a, 42)));
@@ -474,8 +564,8 @@ public class ChatPage extends Page {
         double amount = ChatLogic.txAmount(msg);
         String detail = "gift".equals(type) && !msg.optString("gift", "").isEmpty()
                 ? msg.optString("gift") : msg.optString("note", "").trim();
-        String sub = "¥" + Ui.fmtMoney(amount) + " · " + txStatusLabel(msg)
-                + (detail.isEmpty() ? "" : " · " + detail);
+        String sub = handled ? txStatusLabel(msg)
+                : "¥" + Ui.fmtMoney(amount) + (detail.isEmpty() ? "" : " · " + detail);
         TextView subView = Ui.text(a, sub, 11, 0xDDFFFFFF);
         subView.setSingleLine(true);
         subView.setEllipsize(android.text.TextUtils.TruncateAt.END);
@@ -486,10 +576,25 @@ public class ChatPage extends Page {
         return card;
     }
 
-    private String txStatusLabel(JSONObject msg) {
+    private static int blend(int color, int with, float ratio) {
+        int r = Math.round(Color.red(color) * (1 - ratio) + Color.red(with) * ratio);
+        int g = Math.round(Color.green(color) * (1 - ratio) + Color.green(with) * ratio);
+        int b = Math.round(Color.blue(color) * (1 - ratio) + Color.blue(with) * ratio);
+        return Color.rgb(r, g, b);
+    }
+
+    static String txStatusLabel(JSONObject msg) {
         if ("returned".equals(msg.optString("txStatus", ""))) return "已退还";
         if ("accepted".equals(msg.optString("txStatus", "")) || msg.optBoolean("handled", false)) return "已接收";
-        return "待处理";
+        return "未接收";
+    }
+
+    /** 视频消息：首帧缩略图 + 播放标，点击用系统播放器打开 */
+    private View buildVideoCard(JSONObject msg, float radius) {
+        java.io.File file = a.store.videoFile(msg.optString("src", ""));
+        View box = Ui.videoCard(a, a.store, file, 180, 130, Ui.dp(a, radius));
+        box.setOnClickListener(v -> a.playVideo(file));
+        return box;
     }
 
     /** 点开红包/转账/礼物，等价于旧版 openRed() */
@@ -501,8 +606,7 @@ public class ChatPage extends Page {
         String kindDetail = "gift".equals(type) ? kind + "：" + msg.optString("gift") : kind;
         boolean handled = !msg.optString("txStatus", "").isEmpty() || msg.optBoolean("handled", false);
         if (mine || handled) {
-            Dialogs.notice(a, a.store, "🧧", kindDetail + " ¥" + Ui.fmtMoney(amount),
-                    (mine ? "我发出的" : a.store.displayName() + "发来的") + " · " + txStatusLabel(msg));
+            showTxDetail(msg);
             return;
         }
         String amountLabel = "red".equals(type) && !msg.has("gift") ? "待揭晓" : "¥" + Ui.fmtMoney(amount);
@@ -529,22 +633,133 @@ public class ChatPage extends Page {
                 });
     }
 
+    /** 已处理/我发出的红包转账礼物详情：头像 + 标题 + 谁发来 + 金额 + 状态 */
+    private void showTxDetail(JSONObject msg) {
+        String type = msg.optString("type");
+        boolean mine = "me".equals(msg.optString("side"));
+        double amount = ChatLogic.txAmount(msg);
+        String kind = ChatLogic.txKindLabel(msg);
+        String who = mine ? "我" : a.store.displayName();
+        String verb = "gift".equals(type) ? "送来" : "发来";
+        String title = msg.optString("title", "").trim();
+        if (title.isEmpty()) title = msg.optString("note", "").trim();
+        if (title.isEmpty()) title = kind;
+
+        LinearLayout body = Ui.column(a);
+        body.setGravity(Gravity.CENTER_HORIZONTAL);
+        body.addView(Ui.avatar(a, a.store, mine ? "me" : "other", 56));
+        TextView titleView = Ui.boldText(a, title, 18, Ui.ink(a, a.store));
+        titleView.setGravity(Gravity.CENTER);
+        titleView.setPadding(0, Ui.dp(a, 10), 0, Ui.dp(a, 2));
+        body.addView(titleView);
+        body.addView(Ui.text(a, who + verb + kind, 12, Ui.mutedInk(a, a.store)));
+        if ("gift".equals(type)) {
+            LinearLayout line = Ui.row(a);
+            line.setPadding(0, Ui.dp(a, 12), 0, 0);
+            line.addView(Ui.boldText(a, msg.optString("gift", "礼物") + " ¥" + Ui.fmtMoney(amount), 15, Ui.ink(a, a.store)), Ui.weighted());
+            body.addView(line, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            LinearLayout total = Ui.row(a);
+            total.addView(Ui.boldText(a, "合计", 14, Ui.ink(a, a.store)), Ui.weighted());
+            total.addView(Ui.boldText(a, "¥" + Ui.fmtMoney(amount), 15, a.getColor(R.color.coral)));
+            body.addView(total, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        } else {
+            TextView amountView = Ui.boldText(a, "¥" + Ui.fmtMoney(amount), 30, Ui.plum(a, a.store));
+            amountView.setGravity(Gravity.CENTER);
+            amountView.setPadding(0, Ui.dp(a, 10), 0, Ui.dp(a, 6));
+            body.addView(amountView);
+        }
+        TextView status = Ui.text(a, txStatusLabel(msg), 14, Ui.mutedInk(a, a.store));
+        status.setBackground(Ui.rounded(Ui.surface(a, a.store), Ui.dp(a, 12)));
+        status.setPadding(Ui.dp(a, 16), Ui.dp(a, 12), Ui.dp(a, 16), Ui.dp(a, 12));
+        LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        slp.topMargin = Ui.dp(a, 10);
+        body.addView(status, slp);
+        Dialogs.custom(a, a.store, txIconFor(msg), kind, mine ? "我发出的 · " + txStatusLabel(msg)
+                : a.store.displayName() + verb + "的 · " + txStatusLabel(msg), body, null, "关闭", null);
+    }
+
+    private String txIconFor(JSONObject msg) {
+        String icon = msg.optString("icon", "");
+        if (SvgIcon.isSvg(icon)) return icon;
+        switch (msg.optString("type")) {
+            case "zhuan": return Icons.ZHUAN;
+            case "gift": return Icons.GIFT;
+            default: return Icons.RED;
+        }
+    }
+
+    /** 跳到指定消息并短暂高亮；若消息在未渲染的早期历史里则先展开全部 */
     public void jumpToMessage(String ref) {
         JSONArray chat = a.store.chat();
-        int childIndex = 0;
+        int target = -1;
         for (int i = 0; i < chat.length(); i++) {
             JSONObject msg = chat.optJSONObject(i);
-            if (msg == null) continue;
-            if (ref.equals(msg.optString("id"))) {
-                final int index = childIndex;
-                chatScroll.post(() -> {
-                    if (index < chatArea.getChildCount()) {
-                        chatScroll.smoothScrollTo(0, chatArea.getChildAt(index).getTop());
-                    }
-                });
-                return;
+            if (msg != null && ref.equals(msg.optString("id"))) {
+                target = i;
+                break;
             }
-            childIndex++;
+        }
+        if (target < 0) {
+            a.toast("原消息已不存在");
+            return;
+        }
+        if (target < renderStart) {
+            showAll = true;
+            renderChat(false);
+        }
+        int childIndex = renderStart > 0 ? 1 : 0;
+        for (int i = renderStart; i < target; i++) if (chat.optJSONObject(i) != null) childIndex++;
+        final int index = childIndex;
+        chatScroll.post(() -> {
+            if (index < chatArea.getChildCount()) {
+                View row = chatArea.getChildAt(index);
+                chatScroll.smoothScrollTo(0, Math.max(0, row.getTop() - Ui.dp(a, 60)));
+                row.animate().alpha(0.35f).setDuration(220).withEndAction(
+                        () -> row.animate().alpha(1f).setDuration(420).start()).start();
+            }
+        });
+    }
+
+    private String offerTarget;
+    private String offerRef;
+
+    /** 从搜索页跳转：定位消息，并在输入栏上方提供“引用 / 返回搜索” */
+    public void jumpAndOfferQuote(String ref) {
+        JSONArray chat = a.store.chat();
+        JSONObject found = null;
+        for (int i = 0; i < chat.length(); i++) {
+            JSONObject msg = chat.optJSONObject(i);
+            if (msg != null && ref.equals(msg.optString("id"))) {
+                found = msg;
+                break;
+            }
+        }
+        jumpToMessage(ref);
+        if (found == null || offerBar == null) return;
+        offerTarget = describeQuote(found);
+        offerRef = ref;
+        offerText.setText("已定位：" + offerTarget);
+        offerBar.setVisibility(View.VISIBLE);
+    }
+
+    private void hideOffer() {
+        offerRef = null;
+        offerTarget = null;
+        if (offerBar != null) offerBar.setVisibility(View.GONE);
+    }
+
+    private String describeQuote(JSONObject msg) {
+        String text = msg.optString("text", "");
+        if (!text.isEmpty()) return text;
+        switch (msg.optString("type", "")) {
+            case "img": return "[图片]";
+            case "video": return "[视频]";
+            case "voice": return "[语音]";
+            case "loc": return "[位置]";
+            case "red": return "[红包]";
+            case "zhuan": return "[转账]";
+            case "gift": return "[礼物]";
+            default: return "[消息]";
         }
     }
 
@@ -559,9 +774,9 @@ public class ChatPage extends Page {
             JSONArray pokes = role != null ? role.optJSONArray("pokes") : null;
             String poke = pokes != null && pokes.length() > 0 ? pokes.optString(0) : "拍了拍他的头";
             if ("me".equals(side)) {
-                a.logic.addSys("你" + poke.replace("他", "自己"));
+                a.logic.addSys(a.logic.pokeText("me", "自己", poke));
             } else {
-                a.logic.addSys("你" + poke.replace("他", a.store.displayName()));
+                a.logic.sendPoke("me", poke);
                 a.logic.scheduleReply();
             }
         } else {
@@ -581,6 +796,7 @@ public class ChatPage extends Page {
                 msg.put("quote", quoteTarget).put("quoteRef", quoteRef);
             }
             clearQuote();
+            hideOffer();
             a.logic.addMsg("me", msg);
         } catch (JSONException ignored) {
         }
@@ -750,7 +966,7 @@ public class ChatPage extends Page {
     }
 
     private void sendPoke(String poke) {
-        a.logic.addSys("你" + poke.replace("他", a.store.displayName()));
+        a.logic.sendPoke("me", poke);
         a.logic.scheduleReply();
     }
 
@@ -839,7 +1055,7 @@ public class ChatPage extends Page {
     /** 加号面板：与浏览器版 #plusPanel 同序 */
     private static final String[][] PLUS_ITEMS = {
             {"相册", Icons.ALBUM}, {"红包", Icons.RED}, {"转账", Icons.ZHUAN}, {"定位", Icons.LOC},
-            {"小卖铺", Icons.SHOP}, {"视频", Icons.VIDEO}, {"朋友圈", Icons.NAV_MOMENTS},
+            {"小卖铺", Icons.SHOP}, {"视频通话", Icons.VIDEO}, {"发视频", Icons.FILM}, {"朋友圈", Icons.NAV_MOMENTS},
             {"他的日常", Icons.WX}, {"周报", Icons.WEEKLY},
     };
 
@@ -908,8 +1124,26 @@ public class ChatPage extends Page {
             case "小卖铺":
                 a.goPage("pageShop", true);
                 break;
-            case "视频":
+            case "视频通话":
                 a.videoOverlay.startVideo();
+                break;
+            case "发视频":
+                a.pickVideo((bytes, mime, name) -> {
+                    if (bytes.length > 25 * 1024 * 1024) {
+                        a.toast("视频过大，请选择 25MB 以内的视频");
+                        return;
+                    }
+                    String ref = a.store.importVideo(bytes, mime);
+                    if (ref.isEmpty()) {
+                        a.toast("视频导入失败");
+                        return;
+                    }
+                    try {
+                        a.logic.addMsg("me", new JSONObject().put("type", "video").put("src", ref));
+                        a.logic.scheduleReply();
+                    } catch (JSONException ignored) {
+                    }
+                });
                 break;
             case "朋友圈":
                 a.goPage("pageMoments", true);
@@ -923,22 +1157,14 @@ public class ChatPage extends Page {
         }
     }
 
-    /** 定位：先从 hisLocs 候选里选，也可手动输入 */
+    /** 定位：可直接修改的文本，预填上次/默认位置 */
     private void sendLocation() {
         JSONArray locs = a.store.data.optJSONArray("hisLocs");
-        Dialogs.Field where = new Dialogs.Field("loc", "位置名称");
-        where.placeholder = "例如：家里";
-        if (locs != null && locs.length() > 0) {
-            String[] values = new String[locs.length()];
-            for (int i = 0; i < locs.length(); i++) values[i] = locs.optString(i);
-            where.optionValues = values;
-            where.optionLabels = values;
-            where.value = values[0];
-        }
-        Dialogs.form(a, a.store, "📍", "发送位置", null, "发送", Dialogs.fields(where), values -> {
-            String value = values.getOrDefault("loc", "").trim();
-            if (value.isEmpty()) return;
+        String preset = a.store.data.optString("myLastLoc", "");
+        if (preset.isEmpty() && locs != null && locs.length() > 0) preset = locs.optString(0);
+        Dialogs.prompt(a, a.store, Icons.LOC, "发送位置", "位置名称", "例如：家里", preset, value -> {
             try {
+                a.store.data.put("myLastLoc", value);
                 a.logic.addMsg("me", new JSONObject().put("type", "loc").put("text", value));
                 a.logic.scheduleReply();
             } catch (JSONException ignored) {
@@ -1062,20 +1288,24 @@ public class ChatPage extends Page {
         PopupWindow popup = new PopupWindow(menu,
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, true);
 
+        boolean sys = "sys".equals(msg.optString("type")) || msg.optBoolean("recall", false);
         List<String[]> actions = new ArrayList<>();
-        if (!text.isEmpty()) actions.add(new String[]{"copy", "复制"});
-        if (!text.isEmpty()) actions.add(new String[]{"forward", "转发"});
-        actions.add(new String[]{"favorite", msg.optBoolean("favorite", false) ? "取消收藏" : "收藏"});
-        if (mine && !msg.optBoolean("recall", false)) actions.add(new String[]{"recall", "撤回"});
-        actions.add(new String[]{"delete", "删除"});
-        actions.add(new String[]{"multi", "多选"});
-        if (!msg.optBoolean("recall", false) && !"sys".equals(msg.optString("type"))) {
+        if (sys) {
+            actions.add(new String[]{"multi", "多选"});
+            actions.add(new String[]{"delete", "删除"});
+        } else {
+            if (!text.isEmpty()) actions.add(new String[]{"copy", "复制"});
+            if (!text.isEmpty()) actions.add(new String[]{"forward", "转发"});
+            actions.add(new String[]{"favorite", msg.optBoolean("favorite", false) ? "取消收藏" : "收藏"});
+            if (mine) actions.add(new String[]{"recall", "撤回"});
+            actions.add(new String[]{"delete", "删除"});
+            actions.add(new String[]{"multi", "多选"});
             actions.add(new String[]{"quote", "引用"});
+            actions.add(new String[]{"remind", "提醒"});
+            if (!mine) actions.add(new String[]{"translate", "翻译"});
+            if (!text.isEmpty() && !text.startsWith("[")) actions.add(new String[]{"search", "搜一搜"});
+            if (!text.isEmpty()) actions.add(new String[]{"read", "连续朗读"});
         }
-        actions.add(new String[]{"remind", "提醒"});
-        if (!mine) actions.add(new String[]{"translate", "翻译"});
-        if (!text.isEmpty() && !text.startsWith("[")) actions.add(new String[]{"search", "搜一搜"});
-        if (!text.isEmpty()) actions.add(new String[]{"read", "连续朗读"});
 
         for (String[] action : actions) {
             final String id = action[0];
@@ -1099,6 +1329,8 @@ public class ChatPage extends Page {
         String type = msg.optString("type", "");
         switch (type) {
             case "img": return "[图片]";
+            case "video": return "[视频]";
+            case "sys": return msg.optString("text", "");
             case "loc": return "[位置] " + msg.optString("text");
             case "red": return "[红包] ¥" + Ui.fmtMoney(msg.optDouble("amount", 0));
             case "zhuan": return "[转账] ¥" + Ui.fmtMoney(msg.optDouble("amount", 0));
@@ -1275,7 +1507,7 @@ public class ChatPage extends Page {
             JSONArray msgs = new JSONArray();
             JSONArray chat = a.store.chat();
             String[] keep = {"side", "type", "t", "read", "text", "src", "gift", "price", "amount",
-                    "quote", "items", "note", "icon", "title", "recall"};
+                    "quote", "items", "note", "icon", "title", "recall", "txStatus", "handled"};
             for (int index : selected) {
                 JSONObject m = chat.optJSONObject(index);
                 if (m == null) continue;

@@ -46,11 +46,13 @@ public class ShopPage extends Page {
         JSONObject wallet = role.optJSONObject("wallet");
         LinearLayout walletRow = Ui.row(a);
         LinearLayout mineCol = Ui.column(a);
-        mineCol.addView(Ui.text(a, "我的余额", 12, 0xCCFFFFFF));
+        mineCol.addView(Ui.text(a, "我的余额（点击修改）", 12, 0xCCFFFFFF));
         mineCol.addView(Ui.boldText(a, "¥" + Ui.fmtMoney(wallet != null ? wallet.optDouble("mine", 0) : 0), 22, Color.WHITE));
+        mineCol.setOnClickListener(v -> editBalance("mine", "我的余额"));
         LinearLayout hisCol = Ui.column(a);
-        hisCol.addView(Ui.text(a, "他的余额", 12, 0xCCFFFFFF));
+        hisCol.addView(Ui.text(a, "他的余额（点击修改）", 12, 0xCCFFFFFF));
         hisCol.addView(Ui.boldText(a, "¥" + Ui.fmtMoney(wallet != null ? wallet.optDouble("his", 0) : 0), 22, Color.WHITE));
+        hisCol.setOnClickListener(v -> editBalance("his", "他的余额"));
         walletRow.addView(mineCol, Ui.weighted());
         walletRow.addView(hisCol, Ui.weighted());
         walletCard.addView(walletRow);
@@ -65,7 +67,7 @@ public class ShopPage extends Page {
         cartButton.setBackground(Ui.rounded(0x33FFFFFF, Ui.dp(a, 12)));
         cartButton.setPadding(Ui.dp(a, 10), Ui.dp(a, 5), Ui.dp(a, 10), Ui.dp(a, 5));
         cartButton.addView(SvgIcon.view(a, Icons.CART, Color.WHITE, 16));
-        int cartCount = cartItems().size();
+        int cartCount = cartIds().size();
         TextView cartText = Ui.boldText(a, "购物车" + (cartCount > 0 ? " · " + cartCount : ""), 12, Color.WHITE);
         cartText.setPadding(Ui.dp(a, 4), 0, 0, 0);
         cartButton.addView(cartText);
@@ -137,9 +139,16 @@ public class ShopPage extends Page {
             copy.addView(Ui.boldText(a, product.optString("name"), 14, Ui.ink(a, a.store)));
             copy.addView(Ui.text(a, "¥" + Ui.fmtMoney(product.optDouble("price", 0)), 12, Ui.mutedInk(a, a.store)));
             row.addView(copy, Ui.weighted());
-            boolean inCart = cartIds().contains(productId);
-            View cartAdd = SvgIcon.view(a, Icons.CART, inCart ? Color.WHITE : Ui.plum(a, a.store), 18);
-            cartAdd.setBackground(inCart
+            int inCart = countInCart(productId);
+            LinearLayout cartAdd = Ui.row(a);
+            cartAdd.setGravity(Gravity.CENTER_VERTICAL);
+            cartAdd.addView(SvgIcon.view(a, Icons.CART, inCart > 0 ? Color.WHITE : Ui.plum(a, a.store), 18));
+            if (inCart > 0) {
+                TextView n = Ui.boldText(a, "×" + inCart, 12, Color.WHITE);
+                n.setPadding(Ui.dp(a, 3), 0, 0, 0);
+                cartAdd.addView(n);
+            }
+            cartAdd.setBackground(inCart > 0
                     ? Ui.rounded(0xFF7FA98C, Ui.dp(a, 10))
                     : Ui.roundedStroke(0x00000000, Ui.dp(a, 10), Ui.line(a, a.store), Ui.dp(a, 1)));
             cartAdd.setPadding(Ui.dp(a, 8), Ui.dp(a, 7), Ui.dp(a, 8), Ui.dp(a, 7));
@@ -153,10 +162,7 @@ public class ShopPage extends Page {
             send.setPadding(Ui.dp(a, 12), Ui.dp(a, 7), Ui.dp(a, 12), Ui.dp(a, 7));
             send.setOnClickListener(v -> sendProduct(productId));
             row.addView(send);
-            View del = SvgIcon.view(a, Icons.TRASH, a.getColor(R.color.danger), 18);
-            del.setPadding(Ui.dp(a, 10), 0, 0, 0);
-            del.setOnClickListener(v -> deleteProduct(productId));
-            row.addView(del);
+            row.addView(trashButton("删除商品“" + product.optString("name") + "”？", () -> deleteProduct(productId)));
             listCard.addView(row);
         }
         if (!any) listCard.addView(hint("这个分组还没有商品，点击下方“添加商品”放入第一件商品。"));
@@ -368,26 +374,58 @@ public class ShopPage extends Page {
         return null;
     }
 
+    private void editBalance(String key, String label) {
+        JSONObject role = a.store.role();
+        JSONObject wallet = role != null ? role.optJSONObject("wallet") : null;
+        if (wallet == null) return;
+        Dialogs.prompt(a, a.store, "¥", "修改" + label, "金额", "0.00",
+                Ui.fmtMoney(wallet.optDouble(key, 0)), value -> {
+                    try {
+                        double amount = Double.parseDouble(value.trim());
+                        if (amount < 0) throw new NumberFormatException();
+                        wallet.put(key, Math.round(amount * 100) / 100.0);
+                        a.store.save();
+                        refresh();
+                    } catch (NumberFormatException e) {
+                        Dialogs.notice(a, a.store, "!", "金额无效", "请输入不小于 0 的数字");
+                    } catch (JSONException ignored) {
+                    }
+                });
+    }
+
     private void sendProduct(String id) {
         JSONObject product = findProduct(id);
         if (product == null) return;
-        double price = product.optDouble("price", 0);
-        JSONObject wallet = a.store.role().optJSONObject("wallet");
-        if (wallet != null && price > wallet.optDouble("mine", 0)) {
-            a.toast("余额不足");
-            return;
-        }
-        commitGift(product);
+        Dialogs.prompt(a, a.store, "🎁", "送给他：" + product.optString("name"),
+                "数量", "1", "1", value -> {
+                    int qty;
+                    try {
+                        qty = Integer.parseInt(value.trim());
+                    } catch (NumberFormatException e) {
+                        qty = 0;
+                    }
+                    if (qty <= 0) {
+                        Dialogs.notice(a, a.store, "!", "数量无效", "请输入大于 0 的整数");
+                        return;
+                    }
+                    double total = product.optDouble("price", 0) * qty;
+                    JSONObject wallet = a.store.role().optJSONObject("wallet");
+                    if (wallet != null && total > wallet.optDouble("mine", 0)) {
+                        a.toast("余额不足");
+                        return;
+                    }
+                    commitGift(product, qty);
+                });
     }
 
-    private void commitGift(JSONObject product) {
+    private void commitGift(JSONObject product, int qty) {
         try {
             JSONObject role = a.store.role();
             JSONObject wallet = role.getJSONObject("wallet");
-            double price = product.optDouble("price", 0);
+            double price = Math.round(product.optDouble("price", 0) * qty * 100) / 100.0;
             wallet.put("mine", wallet.optDouble("mine", 0) - price);
             JSONObject msg = new JSONObject().put("type", "gift")
-                    .put("gift", product.optString("name")).put("price", price)
+                    .put("gift", product.optString("name") + (qty > 1 ? " ×" + qty : "")).put("price", price)
                     .put("amount", price).put("read", false)
                     .put("txVersion", 2).put("txStatus", "");
             a.logic.decorateTx(msg, "gift");
@@ -433,6 +471,31 @@ public class ShopPage extends Page {
         return ids;
     }
 
+    private int countInCart(String id) {
+        int n = 0;
+        for (String cartId : cartIds()) if (cartId.equals(id)) n++;
+        return n;
+    }
+
+    /** 购物车按商品合并，返回 [商品, 数量] */
+    private List<Object[]> cartLines() {
+        List<Object[]> lines = new ArrayList<>();
+        for (String id : cartIds()) {
+            boolean merged = false;
+            for (Object[] line : lines) {
+                if (((JSONObject) line[0]).optString("id").equals(id)) {
+                    line[1] = (Integer) line[1] + 1;
+                    merged = true;
+                    break;
+                }
+            }
+            if (merged) continue;
+            JSONObject product = findProduct(id);
+            if (product != null) lines.add(new Object[]{product, 1});
+        }
+        return lines;
+    }
+
     private List<JSONObject> cartItems() {
         List<JSONObject> items = new ArrayList<>();
         for (String id : cartIds()) {
@@ -451,13 +514,9 @@ public class ShopPage extends Page {
 
     private void addToCart(String id) {
         List<String> ids = cartIds();
-        if (ids.contains(id)) {
-            a.toast("已经在购物车里了");
-            return;
-        }
         ids.add(id);
         saveCart(ids);
-        a.toast("已加入购物车");
+        a.toast("已加入购物车 ×" + countInCart(id));
         refresh();
     }
 
@@ -471,28 +530,42 @@ public class ShopPage extends Page {
         if (items.isEmpty()) {
             body.addView(hint("购物车是空的"));
         }
-        for (JSONObject product : items) {
+        for (Object[] line : cartLines()) {
+            JSONObject product = (JSONObject) line[0];
+            int qty = (Integer) line[1];
             final String id = product.optString("id");
-            total += product.optDouble("price", 0);
+            total += product.optDouble("price", 0) * qty;
             LinearLayout row = Ui.row(a);
             row.setGravity(Gravity.CENTER_VERTICAL);
             row.setPadding(0, Ui.dp(a, 6), 0, Ui.dp(a, 6));
             String productIcon = product.optString("icon", "");
             row.addView(SvgIcon.view(a, SvgIcon.isSvg(productIcon) ? productIcon : Icons.GIFT, Ui.plum(a, a.store), 18));
-            TextView name = Ui.boldText(a, product.optString("name"), 14, Ui.ink(a, a.store));
-            name.setPadding(Ui.dp(a, 8), 0, Ui.dp(a, 8), 0);
-            row.addView(name, Ui.weighted());
-            row.addView(Ui.text(a, "¥" + Ui.fmtMoney(product.optDouble("price", 0)), 12, Ui.mutedInk(a, a.store)));
-            View remove = SvgIcon.view(a, Icons.CLOSE, Ui.mutedInk(a, a.store), 16);
-            remove.setPadding(Ui.dp(a, 10), 0, 0, 0);
-            remove.setOnClickListener(v -> {
+            LinearLayout copy = Ui.column(a);
+            copy.setPadding(Ui.dp(a, 8), 0, Ui.dp(a, 8), 0);
+            copy.addView(Ui.boldText(a, product.optString("name"), 14, Ui.ink(a, a.store)));
+            copy.addView(Ui.text(a, "¥" + Ui.fmtMoney(product.optDouble("price", 0)) + " × " + qty, 12, Ui.mutedInk(a, a.store)));
+            row.addView(copy, Ui.weighted());
+            TextView minus = qtyButton("－");
+            minus.setOnClickListener(v -> {
                 List<String> ids = cartIds();
                 ids.remove(id);
                 saveCart(ids);
                 refresh();
                 openCartSheet();
             });
-            row.addView(remove);
+            row.addView(minus);
+            TextView count = Ui.boldText(a, String.valueOf(qty), 14, Ui.ink(a, a.store));
+            count.setPadding(Ui.dp(a, 8), 0, Ui.dp(a, 8), 0);
+            row.addView(count);
+            TextView plus = qtyButton("＋");
+            plus.setOnClickListener(v -> {
+                List<String> ids = cartIds();
+                ids.add(id);
+                saveCart(ids);
+                refresh();
+                openCartSheet();
+            });
+            row.addView(plus);
             body.addView(row);
         }
         if (!items.isEmpty()) {
@@ -506,6 +579,15 @@ public class ShopPage extends Page {
                 items.isEmpty() ? null : "打包送出", this::checkoutCart);
     }
 
+    private TextView qtyButton(String label) {
+        TextView button = Ui.boldText(a, label, 14, Ui.plum(a, a.store));
+        button.setGravity(Gravity.CENTER);
+        button.setMinWidth(Ui.dp(a, 30));
+        button.setPadding(0, Ui.dp(a, 4), 0, Ui.dp(a, 4));
+        button.setBackground(Ui.roundedStroke(0x00000000, Ui.dp(a, 8), Ui.line(a, a.store), Ui.dp(a, 1)));
+        return button;
+    }
+
     private void checkoutCart() {
         List<JSONObject> items = cartItems();
         if (items.isEmpty()) return;
@@ -514,11 +596,14 @@ public class ShopPage extends Page {
             JSONObject wallet = role.getJSONObject("wallet");
             double total = 0;
             JSONArray snapshot = new JSONArray();
-            for (JSONObject product : items) {
-                double price = product.optDouble("price", 0);
+            for (Object[] line : cartLines()) {
+                JSONObject product = (JSONObject) line[0];
+                int qty = (Integer) line[1];
+                double price = product.optDouble("price", 0) * qty;
                 total += price;
-                snapshot.put(new JSONObject().put("name", product.optString("name")).put("price", price));
+                snapshot.put(new JSONObject().put("name", product.optString("name") + (qty > 1 ? " ×" + qty : "")).put("price", price));
             }
+            total = Math.round(total * 100) / 100.0;
             if (total > wallet.optDouble("mine", 0)) {
                 Dialogs.notice(a, a.store, "¥", "余额不足",
                         "还需要 ¥" + Ui.fmtMoney(total - wallet.optDouble("mine", 0)) + "，点上方「我的余额」卡片补充吧。");
@@ -542,23 +627,46 @@ public class ShopPage extends Page {
 
     /* ---------- 账单 ---------- */
 
+    /** 账单：直接从聊天里的红包/转账/礼物消息汇总，谁给谁、什么、多少、已退还/已接收/未接收 */
     private void showBill() {
         JSONObject role = a.store.role();
-        JSONArray bill = role != null ? role.optJSONArray("bill") : null;
-        StringBuilder sb = new StringBuilder();
-        if (bill == null || bill.length() == 0) {
-            sb.append("暂无账单记录");
-        } else {
-            for (int i = bill.length() - 1; i >= 0 && sb.length() < 4000; i--) {
-                JSONObject item = bill.optJSONObject(i);
-                if (item == null) continue;
-                java.text.SimpleDateFormat fmt = new java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.CHINA);
-                sb.append(fmt.format(new java.util.Date(item.optLong("t"))))
-                        .append("  ").append(item.optString("type"))
-                        .append("  ¥").append(Ui.fmtMoney(item.optDouble("amount")))
-                        .append("  ").append(item.optString("status")).append('\n');
-            }
+        if (role == null) return;
+        String me = role.optString("myName", "我");
+        if (me.isEmpty()) me = "我";
+        String him = a.store.displayName();
+        JSONArray chat = role.optJSONArray("chat");
+        LinearLayout body = Ui.column(a);
+        java.text.SimpleDateFormat fmt = new java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.CHINA);
+        int shown = 0;
+        for (int i = chat != null ? chat.length() - 1 : -1; i >= 0 && shown < 60; i--) {
+            JSONObject msg = chat.optJSONObject(i);
+            if (msg == null || msg.optBoolean("recall", false)) continue;
+            String type = msg.optString("type", "");
+            if (!"red".equals(type) && !"zhuan".equals(type) && !"gift".equals(type)) continue;
+            boolean mine = "me".equals(msg.optString("side"));
+            String from = mine ? me : him;
+            String to = mine ? him : me;
+            String kind = ChatLogic.txKindLabel(msg) + (msg.has("gift") ? "：" + msg.optString("gift") : "");
+            String status = ChatPage.txStatusLabel(msg);
+            int statusColor = "已接收".equals(status) ? 0xFF3F9B6A
+                    : "已退还".equals(status) ? 0xFFD9822B : Ui.faintInk(a, a.store);
+            LinearLayout row = Ui.row(a);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(0, Ui.dp(a, 7), 0, Ui.dp(a, 7));
+            LinearLayout copy = Ui.column(a);
+            copy.addView(Ui.boldText(a, from + " → " + to + " · " + kind, 13, Ui.ink(a, a.store)));
+            copy.addView(Ui.text(a, fmt.format(new java.util.Date(msg.optLong("t"))), 11, Ui.faintInk(a, a.store)));
+            row.addView(copy, Ui.weighted());
+            LinearLayout right = Ui.column(a);
+            right.setGravity(Gravity.END);
+            right.addView(Ui.boldText(a, (mine ? "-" : "+") + "¥" + Ui.fmtMoney(ChatLogic.txAmount(msg)), 14,
+                    mine ? Ui.ink(a, a.store) : 0xFF3F9B6A));
+            right.addView(Ui.text(a, status, 11, statusColor));
+            row.addView(right);
+            body.addView(row);
+            shown++;
         }
-        Dialogs.notice(a, a.store, "¥", "钱包账单", sb.toString());
+        if (shown == 0) body.addView(hint("暂无账单记录"));
+        Dialogs.custom(a, a.store, "¥", "钱包账单", null, body, "关闭", null, null);
     }
 }

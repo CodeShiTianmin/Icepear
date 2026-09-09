@@ -5,6 +5,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.PopupMenu;
@@ -37,11 +38,7 @@ public class MomentsPage extends Page {
     @Override
     protected View create() {
         content = Ui.column(a);
-        View post = SvgIcon.view(a, Icons.EDIT, Ui.mutedInk(a, a.store), 19);
-        post.setBackground(Ui.roundedStroke(Ui.surface(a, a.store), Ui.dp(a, 11), Ui.line(a, a.store), Ui.dp(a, 1)));
-        post.setPadding(Ui.dp(a, 8), Ui.dp(a, 8), Ui.dp(a, 8), Ui.dp(a, 8));
-        post.setContentDescription("发布朋友圈");
-        post.setOnClickListener(v -> openPostDialog());
+        View post = barIcon(Icons.EDIT, "发布朋友圈", this::openPostDialog);
         return pageWithBar("朋友圈", content, post);
     }
 
@@ -158,21 +155,25 @@ public class MomentsPage extends Page {
     private View momentCard(JSONObject m, int index) {
         LinearLayout box = card(null);
         LinearLayout row = Ui.row(a);
-        row.addView(Ui.avatar(a, a.store, isMine(m) ? "me" : "other", 40));
+        row.setGravity(Gravity.TOP);
+        row.addView(Ui.avatar(a, a.store, isMine(m) ? "me" : "other", 44));
         LinearLayout body = Ui.column(a);
         body.setPadding(Ui.dp(a, 10), 0, 0, 0);
 
         LinearLayout head = Ui.row(a);
         head.setGravity(Gravity.CENTER_VERTICAL);
-        head.addView(Ui.boldText(a, isMine(m) ? myName() : a.store.displayName(), 14, Ui.plum(a, a.store)), Ui.weighted());
-        View more = SvgIcon.view(a, Icons.MORE, Ui.mutedInk(a, a.store), 18);
-        more.setPadding(Ui.dp(a, 8), Ui.dp(a, 4), 0, Ui.dp(a, 4));
+        head.addView(Ui.boldText(a, isMine(m) ? myName() : a.store.displayName(), 15, Ui.plum(a, a.store)), Ui.weighted());
+        View more = SvgIcon.view(a, Icons.MORE, Ui.mutedInk(a, a.store), 24);
+        more.setPadding(Ui.dp(a, 10), Ui.dp(a, 6), 0, Ui.dp(a, 6));
         more.setOnClickListener(v -> {
             PopupMenu menu = new PopupMenu(a, v, Gravity.END);
+            menu.getMenu().add("珍藏");
             menu.getMenu().add("编辑");
             menu.getMenu().add("删除");
             menu.setOnMenuItemClickListener(item -> {
-                if ("编辑".contentEquals(item.getTitle())) openEditDialog(m);
+                CharSequence title = item.getTitle();
+                if ("珍藏".contentEquals(title)) favoriteMoment(m);
+                else if ("编辑".contentEquals(title)) openEditDialog(m);
                 else deleteMoment(m, index);
                 return true;
             });
@@ -189,11 +190,16 @@ public class MomentsPage extends Page {
             body.addView(p);
         }
         String imageRef = m.optString("image", m.optString("img", ""));
-        if (!imageRef.isEmpty()) {
-            Bitmap bitmap = Ui.decodeDataUrl(a.store.resolveMedia(imageRef));
-            if (bitmap != null) {
-                ImageView image = new ImageView(a);
-                image.setImageBitmap(bitmap);
+        if (Store.isVideoRef(imageRef)) {
+            java.io.File file = a.store.videoFile(imageRef);
+            View video = Ui.videoCard(a, a.store, file, 220, 160, Ui.dp(a, 12));
+            video.setOnClickListener(v -> a.playVideo(file));
+            LinearLayout.LayoutParams lp = Ui.lp(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.topMargin = Ui.dp(a, 8);
+            body.addView(video, lp);
+        } else if (!imageRef.isEmpty()) {
+            ImageView image = new ImageView(a);
+            if (Ui.setImage(image, a.store.resolveMedia(imageRef))) {
                 image.setAdjustViewBounds(true);
                 image.setMaxHeight(Ui.dp(a, 240));
                 image.setScaleType(ImageView.ScaleType.FIT_START);
@@ -211,19 +217,8 @@ public class MomentsPage extends Page {
         java.text.SimpleDateFormat fmt = new java.text.SimpleDateFormat("M-d HH:mm", java.util.Locale.CHINA);
         footer.addView(Ui.text(a, fmt.format(new java.util.Date(m.optLong("t", System.currentTimeMillis()))), 12, Ui.mutedInk(a, a.store)), Ui.weighted());
         boolean liked = m.optBoolean("likedByMe", false);
-        int likes = likesCount(m);
-        if (likes > 0) {
-            TextView n = Ui.text(a, String.valueOf(likes), 12, liked ? 0xFFE77D73 : Ui.mutedInk(a, a.store));
-            footer.addView(n);
-        }
-        View heart = SvgIcon.view(a, liked ? Icons.HEART_ON : Icons.HEART, liked ? 0xFFE77D73 : Ui.mutedInk(a, a.store), 18);
-        heart.setPadding(Ui.dp(a, 8), Ui.dp(a, 6), Ui.dp(a, 8), Ui.dp(a, 6));
-        heart.setOnClickListener(v -> likeMoment(m));
-        footer.addView(heart);
-        View comment = SvgIcon.view(a, Icons.COMMENT, Ui.mutedInk(a, a.store), 18);
-        comment.setPadding(Ui.dp(a, 8), Ui.dp(a, 6), Ui.dp(a, 4), Ui.dp(a, 6));
-        comment.setOnClickListener(v -> commentMoment(m));
-        footer.addView(comment);
+        footer.addView(footerButton(liked ? Icons.HEART_ON : Icons.HEART, liked ? 0xFFE77D73 : Ui.plum(a, a.store), v -> likeMoment(m)));
+        footer.addView(footerButton(Icons.COMMENT, Ui.plum(a, a.store), v -> commentMoment(m)));
         body.addView(footer);
 
         JSONArray comments = m.optJSONArray("comments");
@@ -281,6 +276,58 @@ public class MomentsPage extends Page {
         row.addView(body, Ui.weighted());
         box.addView(row);
         return box;
+    }
+
+    private View footerButton(String svg, int color, View.OnClickListener click) {
+        FrameLayout box = new FrameLayout(a);
+        box.setBackground(Ui.rounded(Ui.surfaceStrong(a, a.store), Ui.dp(a, 10)));
+        box.addView(SvgIcon.view(a, svg, color, 20), new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(Ui.dp(a, 44), Ui.dp(a, 38));
+        lp.leftMargin = Ui.dp(a, 8);
+        box.setLayoutParams(lp);
+        box.setOnClickListener(click);
+        return box;
+    }
+
+    private void favoriteMoment(JSONObject m) {
+        try {
+            JSONArray memories = a.store.memories();
+            String id = m.optString("id", "");
+            for (int i = 0; i < memories.length(); i++) {
+                JSONObject mem = memories.optJSONObject(i);
+                if (mem != null && "moment".equals(mem.optString("kind")) && id.equals(mem.optString("momentId"))) {
+                    a.toast("已经珍藏过了");
+                    return;
+                }
+            }
+            JSONObject entry = new JSONObject()
+                    .put("id", "mem" + System.currentTimeMillis())
+                    .put("t", System.currentTimeMillis())
+                    .put("kind", "moment")
+                    .put("momentId", id)
+                    .put("who", isMine(m) ? myName() : a.store.displayName())
+                    .put("text", m.optString("text", ""))
+                    .put("image", m.optString("image", m.optString("img", "")))
+                    .put("momentT", m.optLong("t", System.currentTimeMillis()));
+            memories.put(entry);
+            a.store.save();
+            a.toast("已珍藏到珍藏时刻");
+        } catch (JSONException ignored) {
+        }
+    }
+
+    private void notifyUnread() {
+        if ("pageMoments".equals(a.currentPage)) {
+            refresh();
+            return;
+        }
+        try {
+            a.store.data.put("momentsUnread", true);
+        } catch (JSONException ignored) {
+        }
+        a.store.save();
+        a.markUnread("pageMoments");
     }
 
     private static int likesCount(JSONObject m) {
@@ -341,11 +388,7 @@ public class MomentsPage extends Page {
                 list.put(new JSONObject().put("name", a.store.displayName())
                         .put("text", pool.get(a.store.rand(0, pool.size() - 1))));
                 a.store.save();
-                if ("pageMoments".equals(a.currentPage)) refresh();
-                else {
-                    a.store.data.put("momentsUnread", true);
-                    a.store.save();
-                }
+                notifyUnread();
             } catch (JSONException ignored) {
             }
         }, seconds * 1000L);
@@ -429,12 +472,26 @@ public class MomentsPage extends Page {
                 return;
             }
             draftImage = ref;
-            Bitmap bmp = Ui.decodeDataUrl(a.store.resolveMedia(ref));
-            if (bmp != null) preview.setImageBitmap(bmp);
+            Ui.setImage(preview, a.store.resolveMedia(ref));
             previewRow.setVisibility(View.VISIBLE);
             pick.setText("更换图片");
         }));
         body.addView(pick);
+        TextView pickVideo = Ui.boldText(a, "添加视频", 13, Ui.plum(a, a.store));
+        pickVideo.setPadding(0, Ui.dp(a, 10), 0, 0);
+        pickVideo.setOnClickListener(v -> a.pickVideo((bytes, mime, name) -> {
+            String ref = a.store.importVideo(bytes, mime);
+            if (ref.isEmpty()) {
+                a.toast("视频导入失败");
+                return;
+            }
+            draftImage = ref;
+            Bitmap thumb = Ui.videoThumb(a.store.videoFile(ref));
+            if (thumb != null) preview.setImageBitmap(thumb);
+            else preview.setImageDrawable(null);
+            previewRow.setVisibility(View.VISIBLE);
+        }));
+        body.addView(pickVideo);
         return body;
     }
 
@@ -472,11 +529,7 @@ public class MomentsPage extends Page {
                                     .put("text", pool.get(a.store.rand(0, pool.size() - 1))));
                         }
                         a.store.save();
-                        if ("pageMoments".equals(a.currentPage)) refresh();
-                        else {
-                            a.store.data.put("momentsUnread", true);
-                            a.store.save();
-                        }
+                        notifyUnread();
                     } catch (JSONException ignored) {
                     }
                 }, a.store.rand(8, 18) * 1000L);
@@ -491,9 +544,12 @@ public class MomentsPage extends Page {
         ImageView preview = new ImageView(a);
         LinearLayout previewRow = Ui.row(a);
         LinearLayout body = postBody(input, m.optString("text", ""), preview, previewRow);
-        if (!draftImage.isEmpty()) {
-            Bitmap bmp = Ui.decodeDataUrl(a.store.resolveMedia(draftImage));
-            if (bmp != null) preview.setImageBitmap(bmp);
+        if (Store.isVideoRef(draftImage)) {
+            Bitmap thumb = Ui.videoThumb(a.store.videoFile(draftImage));
+            if (thumb != null) preview.setImageBitmap(thumb);
+            previewRow.setVisibility(View.VISIBLE);
+        } else if (!draftImage.isEmpty()) {
+            Ui.setImage(preview, a.store.resolveMedia(draftImage));
             previewRow.setVisibility(View.VISIBLE);
         }
         Dialogs.custom(a, a.store, Icons.EDIT, "编辑朋友圈", "内容和图片都可以改", body, "取消", "保存", () -> {

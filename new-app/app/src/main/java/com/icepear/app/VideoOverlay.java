@@ -29,6 +29,7 @@ public class VideoOverlay {
     private int seconds;
     private boolean inCall;
     private int callSeq;
+    private float miniX = -1, miniY = -1;
 
     public VideoOverlay(MainActivity activity) {
         this.a = activity;
@@ -42,12 +43,8 @@ public class VideoOverlay {
     }
 
     public boolean handleBack() {
-        if (fullScreen != null && fullScreen.getVisibility() == View.VISIBLE && inCall) {
-            minimize();
-            return true;
-        }
         if (fullScreen != null && fullScreen.getVisibility() == View.VISIBLE) {
-            endCall(false);
+            minimize();
             return true;
         }
         return false;
@@ -163,23 +160,24 @@ public class VideoOverlay {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM);
         barLp.bottomMargin = Ui.dp(a, 46) + a.insetBottom;
         bar.addView(circleButton("背景", Icons.IMAGE_BG, 0x66FFFFFF, this::pickBackground));
-        if (connected) {
-            bar.addView(circleButton("最小化", Icons.MINIMIZE, 0x66FFFFFF, this::minimize));
-        }
-        bar.addView(circleButton("挂断", Icons.PHONE_OFF, 0xFFE05B4E, () -> endCall(connected)));
+        bar.addView(circleButton("最小化", Icons.MINIMIZE, 0x66FFFFFF, this::minimize));
+        bar.addView(circleButton(connected ? "挂断" : "取消", Icons.PHONE_OFF, 0xFFE05B4E, () -> endCall(connected)));
         fullScreen.addView(bar, barLp);
     }
 
     private void setStatus(String status) {
         if (statusView != null) statusView.setText(status);
+        if (timerMini != null && !inCall) timerMini.setText(status);
     }
 
     private void connect() {
         if (fullScreen == null) return;
+        boolean wasMini = miniWindow != null && miniWindow.getVisibility() == View.VISIBLE;
         inCall = true;
         seconds = 0;
         showCallScreen("通话中", false);
         addBottomBar(true);
+        if (wasMini) minimize();
         tick = () -> {
             seconds++;
             String label = Ui.fmtDur(seconds);
@@ -213,6 +211,7 @@ public class VideoOverlay {
 
     private void minimize() {
         if (fullScreen != null) fullScreen.setVisibility(View.GONE);
+        root.setClickable(false);
         if (miniWindow != null) {
             miniWindow.setVisibility(View.VISIBLE);
             return;
@@ -223,25 +222,31 @@ public class VideoOverlay {
         miniWindow.setPadding(Ui.dp(a, 10), Ui.dp(a, 10), Ui.dp(a, 10), Ui.dp(a, 10));
         miniWindow.setElevation(Ui.dp(a, 10));
         miniWindow.addView(Ui.avatar(a, a.store, "other", 44));
-        timerMini = Ui.boldText(a, Ui.fmtDur(seconds), 11, Color.WHITE);
+        timerMini = Ui.boldText(a, inCall ? Ui.fmtDur(seconds) : "等待接听…", 11, Color.WHITE);
         timerMini.setGravity(Gravity.CENTER);
         timerMini.setPadding(0, Ui.dp(a, 4), 0, 0);
         miniWindow.addView(timerMini);
-        TextView miniHang = Ui.boldText(a, "挂断", 11, Color.WHITE);
+        TextView miniHang = Ui.boldText(a, inCall ? "挂断" : "取消", 11, Color.WHITE);
         miniHang.setGravity(Gravity.CENTER);
         miniHang.setBackground(Ui.rounded(0xFFE05B4E, Ui.dp(a, 10)));
         miniHang.setPadding(Ui.dp(a, 10), Ui.dp(a, 4), Ui.dp(a, 10), Ui.dp(a, 4));
         LinearLayout.LayoutParams hangLp = Ui.lp(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         hangLp.topMargin = Ui.dp(a, 6);
         miniHang.setLayoutParams(hangLp);
-        miniHang.setOnClickListener(v -> endCall(true));
+        miniHang.setOnClickListener(v -> endCall(inCall));
         miniWindow.addView(miniHang);
         FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
                 Ui.dp(a, 88), ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.END);
         lp.topMargin = Ui.dp(a, 120) + a.insetTop;
-        lp.rightMargin = Ui.dp(a, 10);
         root.addView(miniWindow, lp);
-        root.setClickable(false);
+        if (miniX >= 0) {
+            final View mw = miniWindow;
+            mw.post(() -> {
+                mw.setX(miniX);
+                mw.setY(miniY);
+                snapToEdge(mw);
+            });
+        }
 
         miniWindow.setOnTouchListener(new View.OnTouchListener() {
             float downX, downY, startX, startY;
@@ -272,18 +277,25 @@ public class VideoOverlay {
                             snapToEdge(v);
                         }
                         return true;
+                    case MotionEvent.ACTION_CANCEL:
+                        snapToEdge(v);
+                        return true;
                 }
                 return false;
             }
         });
     }
 
-    /** 贴边：靠近左右边缘时半隐藏 */
+    /** 贴边：松手后完整靠到更近的一侧屏幕边缘，不露空也不出屏 */
     private void snapToEdge(View v) {
+        if (root.getWidth() == 0 || v.getWidth() == 0) return;
         float centerX = v.getX() + v.getWidth() / 2f;
         boolean left = centerX < root.getWidth() / 2f;
-        float target = left ? -v.getWidth() * 0.45f : root.getWidth() - v.getWidth() * 0.55f;
-        v.animate().x(target).setDuration(180).start();
+        float target = left ? 0 : root.getWidth() - v.getWidth();
+        float y = Math.max(a.insetTop, Math.min(root.getHeight() - v.getHeight() - a.insetBottom, v.getY()));
+        miniX = target;
+        miniY = y;
+        v.animate().x(target).y(y).setDuration(180).start();
     }
 
     private void restore() {

@@ -8,7 +8,7 @@ import android.widget.TextView;
 
 /**
  * 功能中心，对应浏览器版 #pageMenu：两列 group-tab 按钮（SVG 图标 + 文字，左对齐），
- * 顺序与浏览器一致：搜索聊天 / 小卖铺 / 字卡设置 / 信箱 / 设置 / 朋友圈 / 他的日常 / 词云 / 珍藏时刻 / 互动周报 / 视频通话。
+ * 顺序与浏览器一致：搜索聊天 / 小卖铺 / 字卡设置 / 信箱 / 设置 / 朋友圈 / 他的日常 / 词云 / 珍藏时刻 / 纪念日。
  */
 public class MenuPage extends Page {
 
@@ -22,8 +22,7 @@ public class MenuPage extends Page {
             {Icons.SUN_CLOUD, "他的日常", "pageWeather"},
             {Icons.WORD_CLOUD, "词云", "pageCloud"},
             {Icons.HEART, "珍藏时刻", "pageFav"},
-            {Icons.WEEKLY, "互动周报", "pageWeekly"},
-            {Icons.VIDEO, "视频通话", "@video"},
+            {Icons.CALENDAR, "纪念日", "pageMemo"},
     };
 
     public MenuPage(MainActivity activity) {
@@ -52,12 +51,7 @@ public class MenuPage extends Page {
             lp.width = 0;
             lp.setMargins(Ui.dp(a, 5), Ui.dp(a, 5), Ui.dp(a, 5), Ui.dp(a, 5));
             cell.setLayoutParams(lp);
-            cell.setOnClickListener(v -> {
-                if ("@video".equals(target)) {
-                    a.goPage("pageChat", false);
-                    a.videoOverlay.startVideo();
-                } else a.goPage(target, true);
-            });
+            cell.setOnClickListener(v -> a.goPage(target, true));
             grid.addView(cell);
         }
         content.addView(grid);

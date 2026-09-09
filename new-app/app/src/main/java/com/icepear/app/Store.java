@@ -322,6 +322,114 @@ public final class Store {
         }
     }
 
+    /* ---------- 字卡：隐藏 / 日常池 / 拍一拍格式 ---------- */
+
+    /** 被隐藏的字卡文本（按角色）：仍保留在分组里，但不会被随机回复、朋友圈种子等抽到 */
+    public JSONArray hiddenCards() {
+        JSONObject role = role();
+        if (role == null) return new JSONArray();
+        JSONArray list = role.optJSONArray("hiddenCards");
+        if (list == null) {
+            list = new JSONArray();
+            try {
+                role.put("hiddenCards", list);
+            } catch (JSONException ignored) {
+            }
+        }
+        return list;
+    }
+
+    public boolean isCardHidden(String text) {
+        JSONArray hidden = hiddenCards();
+        for (int i = 0; i < hidden.length(); i++) if (text.equals(hidden.optString(i))) return true;
+        return false;
+    }
+
+    public void setCardHidden(String text, boolean hide) {
+        JSONArray hidden = hiddenCards();
+        for (int i = hidden.length() - 1; i >= 0; i--) {
+            if (text.equals(hidden.optString(i))) {
+                if (hide) return;
+                hidden.remove(i);
+            }
+        }
+        if (hide) hidden.put(text);
+    }
+
+    /** 把某分组里的一张字卡改成新文本，同步隐藏标记 */
+    public void renameCard(String group, int index, String text) {
+        JSONObject role = role();
+        JSONObject cards = role != null ? role.optJSONObject("cards") : null;
+        JSONArray list = cards != null ? cards.optJSONArray(group) : null;
+        if (list == null || index < 0 || index >= list.length()) return;
+        String old = list.optString(index);
+        boolean hidden = isCardHidden(old);
+        try {
+            list.put(index, text);
+        } catch (JSONException ignored) {
+        }
+        if (hidden) {
+            setCardHidden(old, false);
+            setCardHidden(text, true);
+        }
+    }
+
+    public static final String[] DAILY_KEYS = {"weather", "body", "mood", "did", "ate", "plan"};
+
+    /** 他的日常六个抽取池之一（weather/body/mood/did/ate/plan） */
+    public JSONArray dailyPool(String key) {
+        JSONObject pools = data.optJSONObject("daily");
+        try {
+            if (pools == null) {
+                pools = new JSONObject();
+                data.put("daily", pools);
+            }
+            JSONArray pool = pools.optJSONArray(key);
+            if (pool == null) {
+                pool = new JSONArray();
+                pools.put(key, pool);
+            }
+            return pool;
+        } catch (JSONException e) {
+            return new JSONArray();
+        }
+    }
+
+    /**
+     * 拍一拍格式：{我} 为动作发起方（你 / 他的名字），{他} 为被拍的一方，{文案} 为拍一拍文案池里的一句。
+     * 保存时不做 trim，所以模板中的空格会原样保留。
+     */
+    public static final String DEFAULT_POKE_FORMAT = "{我}{文案}";
+
+    public String pokeFormat() {
+        String format = data.optString("pokeFormat", "");
+        return format.isEmpty() ? DEFAULT_POKE_FORMAT : format;
+    }
+
+    public void setPokeFormat(String format) {
+        try {
+            if (format == null || format.isEmpty()) data.remove("pokeFormat");
+            else data.put("pokeFormat", format);
+        } catch (JSONException ignored) {
+        }
+    }
+
+    /* ---------- 撤回后他会追问：文案池 ---------- */
+
+    public static final String[] DEFAULT_RECALL = {"刚刚撤回了什么呀？", "让我看看你撤回了什么", "撤回也来不及啦，我看到了"};
+
+    public JSONArray recallPool() {
+        JSONArray pool = data.optJSONArray("recallPool");
+        if (pool == null) {
+            pool = jsonArray(DEFAULT_RECALL);
+            try {
+                data.put("recallPool", pool);
+            } catch (JSONException ignored) {
+            }
+        }
+        return pool;
+    }
+
     /* ---------- 购物车（按角色） ---------- */
 
     public JSONArray cart() {
@@ -496,13 +604,16 @@ public final class Store {
         if (role == null) return pool;
         JSONObject cards = role.optJSONObject("cards");
         if (cards == null) return pool;
+        JSONArray hiddenList = role.optJSONArray("hiddenCards");
+        java.util.Set<String> hidden = new java.util.HashSet<>();
+        for (int i = 0; hiddenList != null && i < hiddenList.length(); i++) hidden.add(hiddenList.optString(i));
         Iterator<String> it = cards.keys();
         while (it.hasNext()) {
             JSONArray list = cards.optJSONArray(it.next());
             if (list == null) continue;
             for (int i = 0; i < list.length(); i++) {
                 String s = list.optString(i, "");
-                if (!s.isEmpty()) pool.add(s);
+                if (!s.isEmpty() && !hidden.contains(s)) pool.add(s);
             }
         }
         return pool;
@@ -620,7 +731,7 @@ public final class Store {
     }
 
     public void deleteMedia(String ref) {
-        if (ref != null && ref.startsWith("idb:")) {
+        if (ref != null && (ref.startsWith("idb:") || ref.startsWith("vid:"))) {
             //noinspection ResultOfMethodCallIgnored
             new File(mediaDir, ref.substring(4)).delete();
         }
@@ -631,6 +742,29 @@ public final class Store {
         String dataUrl = "data:" + (mime == null || mime.isEmpty() ? "image/png" : mime) + ";base64,"
                 + Base64.encodeToString(bytes, Base64.NO_WRAP);
         return putMediaDataUrl(dataUrl, uid("img"));
+    }
+
+    /** 视频以原始文件保存（不做 base64），引用为 vid:key */
+    public String importVideo(byte[] bytes, String mime) {
+        String ext = mime != null && mime.contains("webm") ? ".webm" : ".mp4";
+        String key = uid("vid") + ext;
+        try (FileOutputStream out = new FileOutputStream(new File(mediaDir, key))) {
+            out.write(bytes);
+            return "vid:" + key;
+        } catch (IOException e) {
+            return "";
+        }
+    }
+
+    public static boolean isVideoRef(String ref) {
+        return ref != null && ref.startsWith("vid:");
+    }
+
+    /** vid:key -> 文件；不存在返回 null */
+    public File videoFile(String ref) {
+        if (!isVideoRef(ref)) return null;
+        File file = new File(mediaDir, ref.substring(4));
+        return file.exists() ? file : null;
     }
 
     public String importAudio(byte[] bytes, String mime) {

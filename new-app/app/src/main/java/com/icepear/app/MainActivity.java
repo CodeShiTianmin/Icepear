@@ -39,6 +39,7 @@ public class MainActivity extends Activity implements ChatLogic.Host {
 
     private static final int REQ_PICK_FILE = 4107;
     private static final int REQ_SAVE_FILE = 4108;
+    private static final int REQ_PICK_MULTI = 4109;
 
     public Store store;
     public SoundPlayer sound;
@@ -100,6 +101,8 @@ public class MainActivity extends Activity implements ChatLogic.Host {
         pages.put("pageMoments", new MomentsPage(this));
         pages.put("pageCloud", new CloudPage(this));
         pages.put("pageFav", new FavoritesPage(this));
+        pages.put("pageMemoryEdit", new MemoryEditPage(this));
+        pages.put("pageMemo", new AnniversaryPage(this));
 
         videoOverlay = new VideoOverlay(this);
         root.addView(videoOverlay.rootView(), new FrameLayout.LayoutParams(
@@ -256,26 +259,38 @@ public class MainActivity extends Activity implements ChatLogic.Host {
         return false;
     }
 
+    /** 未读红点：聊天 / 朋友圈有新内容且当前不在该页时显示，进入页面后清除 */
+    private final java.util.Set<String> unread = new java.util.HashSet<>();
+
+    public void markUnread(String pageId) {
+        if (pageId.equals(currentPage)) return;
+        if (unread.add(pageId)) buildBottomNav();
+    }
+
     private void buildBottomNav() {
         bottomNav.removeAllViews();
         bottomNav.setBackgroundColor(Ui.navBg(this, store));
-        View line = new View(this);
-        line.setBackgroundColor(Ui.line(this, store));
         for (String[] item : NAV) {
             final String id = item[0];
             boolean active = id.equals(currentPage);
-            int color = active ? Ui.plum(this, store) : Ui.faintInk(this, store);
-            LinearLayout button = new LinearLayout(this);
-            button.setOrientation(LinearLayout.VERTICAL);
-            button.setGravity(Gravity.CENTER);
+            int color = active ? Ui.plum(this, store) : Ui.mutedInk(this, store);
+            FrameLayout button = new FrameLayout(this);
             button.setContentDescription(item[2]);
-            ImageView icon = SvgIcon.view(this, item[1], color, 24);
-            button.addView(icon);
-            TextView label = Ui.text(this, item[2], 11, color);
-            label.setGravity(Gravity.CENTER);
-            label.setPadding(0, Ui.dp(this, 3), 0, 0);
-            if (active) label.setTypeface(label.getTypeface(), android.graphics.Typeface.BOLD);
-            button.addView(label);
+            ImageView icon = SvgIcon.view(this, item[1], color, 26);
+            int pad = Ui.dp(this, 8);
+            icon.setPadding(pad, pad, pad, pad);
+            FrameLayout.LayoutParams iconLp = new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER);
+            button.addView(icon, iconLp);
+            if (unread.contains(id) && !active) {
+                View dot = new View(this);
+                int d = Ui.dp(this, 8);
+                dot.setBackground(Ui.rounded(0xFFE5484D, d / 2f));
+                FrameLayout.LayoutParams dotLp = new FrameLayout.LayoutParams(d, d, Gravity.CENTER);
+                dotLp.leftMargin = Ui.dp(this, 22);
+                dotLp.bottomMargin = Ui.dp(this, 20);
+                button.addView(dot, dotLp);
+            }
             button.setOnClickListener(v -> goPage(id, true));
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
             bottomNav.addView(button, lp);
@@ -289,6 +304,7 @@ public class MainActivity extends Activity implements ChatLogic.Host {
         if (page == null) return;
         if (pushBack && !id.equals(currentPage)) backStack.push(currentPage);
         currentPage = id;
+        unread.remove(id);
         pageHost.removeAllViews();
         pageHost.addView(page.view(), new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -335,27 +351,10 @@ public class MainActivity extends Activity implements ChatLogic.Host {
         LinearLayout center = Ui.column(this);
         center.setGravity(Gravity.CENTER_HORIZONTAL);
 
-        FrameLayout stage = new FrameLayout(this);
+        FrameLayout stage = bootStage(anim, icepearUi != null ? icepearUi.optString("bootImg", "") : "");
         LinearLayout.LayoutParams stageLp = Ui.lp(Ui.dp(this, 220), Ui.dp(this, 130));
         stageLp.gravity = Gravity.CENTER_HORIZONTAL;
         stage.setLayoutParams(stageLp);
-        stage.setClipChildren(true);
-        renderBootAnim(anim, stage);
-        String bootImg = icepearUi != null ? store.resolveMedia(icepearUi.optString("bootImg", "")) : "";
-        if (!bootImg.isEmpty()) {
-            android.graphics.Bitmap bitmap = Ui.decodeDataUrl(bootImg);
-            if (bitmap != null) {
-                android.widget.ImageView image = new android.widget.ImageView(this);
-                image.setImageBitmap(bitmap);
-                image.setScaleType(android.widget.ImageView.ScaleType.CENTER_CROP);
-                image.setClipToOutline(true);
-                image.setBackground(Ui.rounded(0x00000000, Ui.dp(this, 12)));
-                FrameLayout.LayoutParams imgLp = new FrameLayout.LayoutParams(
-                        Ui.dp(this, 128), Ui.dp(this, 50), Gravity.TOP | Gravity.CENTER_HORIZONTAL);
-                imgLp.topMargin = Ui.dp(this, 4);
-                stage.addView(image, imgLp);
-            }
-        }
         center.addView(stage);
 
         TextView logo = Ui.boldText(this, "Icepear", 34, Ui.plum(this, store));
@@ -389,6 +388,33 @@ public class MainActivity extends Activity implements ChatLogic.Host {
                 return true;
             }
         });
+    }
+
+    /** 开屏动画舞台（220x130dp）：动画 + 叠在上方的自定义图片，设置页预览也用它 */
+    public FrameLayout bootStage(String anim, String bootImgRef) {
+        FrameLayout stage = new FrameLayout(this);
+        stage.setClipChildren(true);
+        if (!"off".equals(anim)) renderBootAnim(anim, stage);
+        String bootImg = store.resolveMedia(bootImgRef == null ? "" : bootImgRef);
+        if (!bootImg.isEmpty()) {
+            android.graphics.Bitmap bitmap = Ui.decodeDataUrl(bootImg);
+            if (bitmap != null) {
+                android.widget.ImageView image = new android.widget.ImageView(this);
+                image.setImageBitmap(bitmap);
+                image.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+                image.setAdjustViewBounds(true);
+                image.setClipToOutline(true);
+                image.setBackground(Ui.rounded(0x00000000, Ui.dp(this, 12)));
+                int maxW = Ui.dp(this, 200);
+                int maxH = Ui.dp(this, 110);
+                float scale = Math.min(maxW / (float) bitmap.getWidth(), maxH / (float) bitmap.getHeight());
+                int w = Math.max(1, Math.round(bitmap.getWidth() * scale));
+                int h = Math.max(1, Math.round(bitmap.getHeight() * scale));
+                FrameLayout.LayoutParams imgLp = new FrameLayout.LayoutParams(w, h, Gravity.CENTER);
+                stage.addView(image, imgLp);
+            }
+        }
+        return stage;
     }
 
     /** 四种开屏动画：爱心飘动 / 气泡上升 / 星星闪烁 / 头像碰碰 */
@@ -526,12 +552,128 @@ public class MainActivity extends Activity implements ChatLogic.Host {
         }
     }
 
+    /** 相册选视频 */
+    public void pickVideo(FilePicked callback) {
+        pendingPick = callback;
+        Intent intent;
+        if (Build.VERSION.SDK_INT >= 33) {
+            intent = new Intent(android.provider.MediaStore.ACTION_PICK_IMAGES);
+            intent.setType("video/*");
+        } else {
+            intent = new Intent(Intent.ACTION_PICK, android.provider.MediaStore.Video.Media.EXTERNAL_CONTENT_URI);
+        }
+        try {
+            startActivityForResult(intent, REQ_PICK_FILE);
+        } catch (Exception e) {
+            pendingPick = null;
+            pickFile("video/*", callback);
+        }
+    }
+
+    public interface FilesPicked {
+        void run(java.util.List<byte[]> bytes, java.util.List<String> mimes);
+    }
+
+    private FilesPicked pendingMultiPick;
+
+    /** 相册多选图片 */
+    public void pickImages(FilesPicked callback) {
+        pendingMultiPick = callback;
+        Intent intent;
+        if (Build.VERSION.SDK_INT >= 33) {
+            intent = new Intent(android.provider.MediaStore.ACTION_PICK_IMAGES);
+            intent.putExtra(android.provider.MediaStore.EXTRA_PICK_IMAGES_MAX, 50);
+        } else {
+            intent = new Intent(Intent.ACTION_GET_CONTENT);
+            intent.setType("image/*");
+            intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+        }
+        try {
+            startActivityForResult(intent, REQ_PICK_MULTI);
+        } catch (Exception e) {
+            pendingMultiPick = null;
+            toast("无法打开相册");
+        }
+    }
+
+    /** 应用内播放视频 */
+    public void playVideo(java.io.File file) {
+        if (file == null || !file.exists()) {
+            toast("视频文件不存在");
+            return;
+        }
+        android.app.Dialog dialog = new android.app.Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
+        FrameLayout box = new FrameLayout(this);
+        box.setBackgroundColor(Color.BLACK);
+        android.widget.VideoView video = new android.widget.VideoView(this);
+        FrameLayout.LayoutParams vlp = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER);
+        box.addView(video, vlp);
+        android.widget.MediaController controller = new android.widget.MediaController(this);
+        controller.setAnchorView(video);
+        video.setMediaController(controller);
+        video.setOnErrorListener((mp, what, extra) -> {
+            toast("无法播放该视频");
+            dialog.dismiss();
+            return true;
+        });
+        video.setOnCompletionListener(mp -> dialog.dismiss());
+        box.setOnClickListener(v -> dialog.dismiss());
+        dialog.setContentView(box);
+        dialog.setOnDismissListener(d -> video.stopPlayback());
+        dialog.show();
+        video.setVideoURI(Uri.fromFile(file));
+        video.start();
+    }
+
     public void pickFile(String mimeType, FilePicked callback) {
         pendingPick = callback;
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType(mimeType);
         startActivityForResult(intent, REQ_PICK_FILE);
+    }
+
+    /**
+     * 无损保存到相册（PNG）。Android 10+ 直接写 MediaStore 的 Pictures/Icepear；
+     * 更低版本没有存储权限，改走系统“保存到…”文档选择器。
+     */
+    public void saveImageToGallery(android.graphics.Bitmap bitmap, String fileName) {
+        if (bitmap == null) {
+            toast("没有可保存的图片");
+            return;
+        }
+        if (Build.VERSION.SDK_INT >= 29) {
+            android.content.ContentValues values = new android.content.ContentValues();
+            values.put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, fileName);
+            values.put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/png");
+            values.put(android.provider.MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Icepear");
+            values.put(android.provider.MediaStore.Images.Media.IS_PENDING, 1);
+            Uri uri = getContentResolver().insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
+            if (uri == null) {
+                toast("保存失败");
+                return;
+            }
+            try (java.io.OutputStream out = getContentResolver().openOutputStream(uri)) {
+                bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out);
+                values.clear();
+                values.put(android.provider.MediaStore.Images.Media.IS_PENDING, 0);
+                getContentResolver().update(uri, values, null, null);
+                toast("已保存到相册");
+            } catch (Exception e) {
+                getContentResolver().delete(uri, null, null);
+                toast("保存失败");
+            }
+            return;
+        }
+        saveFile("image/png", fileName, uri -> {
+            try (java.io.OutputStream out = getContentResolver().openOutputStream(uri)) {
+                bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out);
+                toast("已保存");
+            } catch (Exception e) {
+                toast("保存失败");
+            }
+        });
     }
 
     public void saveFile(String mimeType, String fileName, FileSaved callback) {
@@ -546,6 +688,37 @@ public class MainActivity extends Activity implements ChatLogic.Host {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQ_PICK_MULTI) {
+            FilesPicked callback = pendingMultiPick;
+            pendingMultiPick = null;
+            if (resultCode != RESULT_OK || data == null || callback == null) return;
+            java.util.List<Uri> uris = new java.util.ArrayList<>();
+            ClipData clip = data.getClipData();
+            if (clip != null) {
+                for (int i = 0; i < clip.getItemCount(); i++) {
+                    Uri u = clip.getItemAt(i).getUri();
+                    if (u != null) uris.add(u);
+                }
+            } else if (data.getData() != null) {
+                uris.add(data.getData());
+            }
+            java.util.List<byte[]> all = new java.util.ArrayList<>();
+            java.util.List<String> mimes = new java.util.ArrayList<>();
+            for (Uri u : uris) {
+                try (InputStream in = getContentResolver().openInputStream(u)) {
+                    ByteArrayOutputStream out = new ByteArrayOutputStream();
+                    byte[] buf = new byte[8192];
+                    int n;
+                    while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+                    String mime = getContentResolver().getType(u);
+                    all.add(out.toByteArray());
+                    mimes.add(mime == null ? "" : mime);
+                } catch (Exception ignored) {
+                }
+            }
+            if (!all.isEmpty()) callback.run(all, mimes);
+            return;
+        }
         if (resultCode != RESULT_OK || data == null || data.getData() == null) {
             pendingPick = null;
             pendingSave = null;
@@ -576,6 +749,7 @@ public class MainActivity extends Activity implements ChatLogic.Host {
 
     @Override
     public void onChatChanged(boolean scrollToBottom) {
+        if (!scrollToBottom) markUnread("pageChat");
         Page chat = pages.get("pageChat");
         if (chat instanceof ChatPage) ((ChatPage) chat).renderChat(scrollToBottom);
     }
